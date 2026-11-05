@@ -5,11 +5,9 @@ import {
 import { canOpenHash } from '@shared/roles.js';
 
 /* =========================================================================
-   FAST SCREEN JUMPER LEFT-SIDE DRAWER (EXPANDS VIA 3-STRIPE BUTTON)
+   ATTACHED SIDEBAR: SLIDES WITHIN THE SCREEN (WHITE / LIGHT THEME MATCHING MAIN SCREEN)
    ========================================================================= */
 export function NavigationSidebarDrawer({ isOpen, onClose, currentHash, navigateTo, currentUser }) {
-  if (!isOpen) return null;
-
   const allRoutes = [
     { hash: '#customer', label: '📊 Customer Dashboard' },
     { hash: '#customer/request', label: '🚨 Request Emergency Cleaning' },
@@ -30,33 +28,38 @@ export function NavigationSidebarDrawer({ isOpen, onClose, currentHash, navigate
   const routes = allRoutes.filter(r => canOpenHash(currentUser?.role, r.hash));
 
   return (
-    <div className="fixed inset-0 z-[100] flex animate-in fade-in duration-200">
-      {/* Click outside backdrop to close */}
-      <div 
-        className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm transition-opacity cursor-pointer"
-        onClick={onClose}
-        aria-label="Close navigation sidebar"
-      />
-
-      {/* Top to Bottom Left Side Drawer */}
-      <div className="relative w-80 max-w-[85vw] bg-slate-900 text-white h-full shadow-2xl flex flex-col z-10 border-r border-slate-800 animate-in slide-in-from-left duration-200">
-        {/* Drawer Header */}
-        <div className="p-4 border-b border-slate-800 flex items-center justify-between bg-slate-950/80">
+    <aside
+      aria-label="Navigation Sidebar"
+      className={`shrink-0 bg-white text-slate-800 border-r border-slate-200 transition-all duration-300 ease-in-out flex flex-col z-30 ${
+        isOpen 
+          ? 'w-72 sm:w-80 opacity-100 shadow-lg' 
+          : 'w-0 opacity-0 overflow-hidden border-r-0 pointer-events-none'
+      }`}
+      style={{
+        height: 'calc(100vh - 61px)',
+        position: 'sticky',
+        top: '61px'
+      }}
+    >
+      {/* Inner fixed-width container to prevent text/layout squishing during slide */}
+      <div className="w-72 sm:w-80 h-full flex flex-col overflow-hidden">
+        {/* Sidebar Header */}
+        <div className="p-4 border-b border-slate-200 flex items-center justify-between bg-slate-50/80 shrink-0">
           <div className="flex items-center gap-2.5">
-            <div className="bg-[#0286cd] p-2 rounded-xl text-white shadow-md shadow-[#0286cd]/30">
+            <div className="bg-[#0286cd] p-2 rounded-xl text-white shadow-md shadow-[#0286cd]/25">
               <Zap className="w-4 h-4 text-amber-300" />
             </div>
             <div>
-              <h2 className="text-xs font-black uppercase tracking-wider text-white">
+              <h2 className="text-xs font-black uppercase tracking-wider text-slate-800">
                 Screen Jumper
               </h2>
-              <p className="text-[10px] text-slate-400 font-medium">Quick switch screens & modules</p>
+              <p className="text-[10px] text-slate-500 font-medium">Quick switch screens & modules</p>
             </div>
           </div>
           <button 
             onClick={onClose}
-            className="p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
-            title="Close menu"
+            className="p-1.5 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-200/60 transition-colors cursor-pointer"
+            title="Collapse sidebar"
           >
             <X className="w-5 h-5" />
           </button>
@@ -64,18 +67,18 @@ export function NavigationSidebarDrawer({ isOpen, onClose, currentHash, navigate
 
         {/* User Info banner if logged in */}
         {currentUser && (
-          <div className="p-3 mx-3 mt-3 rounded-2xl bg-slate-800/80 border border-slate-700/60 flex items-center gap-2.5">
+          <div className="p-3 mx-3 mt-3 rounded-2xl bg-slate-50 border border-slate-200 flex items-center gap-2.5 shrink-0">
             <div className="w-8 h-8 rounded-full bg-[#0286cd] text-white flex items-center justify-center font-black text-xs uppercase shrink-0 shadow-sm">
               {currentUser.name ? currentUser.name.charAt(0) : 'U'}
             </div>
             <div className="min-w-0 flex-1">
-              <p className="text-xs font-bold text-white truncate">{currentUser.name}</p>
+              <p className="text-xs font-bold text-slate-800 truncate">{currentUser.name}</p>
               <div className="flex items-center gap-1.5 mt-0.5">
-                <span className="text-[9px] uppercase font-black px-1.5 py-0.5 rounded bg-[#0286cd]/20 text-[#0286cd] border border-[#0286cd]/40">
+                <span className="text-[9px] uppercase font-black px-1.5 py-0.5 rounded bg-[#0286cd]/10 text-[#0286cd] border border-[#0286cd]/30">
                   {currentUser.role}
                 </span>
                 {currentUser.businessName && (
-                  <span className="text-[10px] text-slate-400 truncate max-w-[130px]">
+                  <span className="text-[10px] text-slate-500 truncate max-w-[130px]">
                     {currentUser.businessName}
                   </span>
                 )}
@@ -86,7 +89,7 @@ export function NavigationSidebarDrawer({ isOpen, onClose, currentHash, navigate
 
         {/* Scrollable Route List */}
         <div className="flex-1 overflow-y-auto p-3 space-y-1.5 custom-scroll-container">
-          <div className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 px-2 py-1">
+          <div className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 px-2 py-1">
             Available Screens
           </div>
           {routes.map(r => {
@@ -96,12 +99,11 @@ export function NavigationSidebarDrawer({ isOpen, onClose, currentHash, navigate
                 key={r.hash}
                 onClick={() => {
                   navigateTo(r.hash);
-                  onClose();
                 }}
                 className={`w-full text-left px-3.5 py-2.5 rounded-xl font-semibold text-xs flex items-center justify-between transition-all cursor-pointer ${
                   isActive
-                    ? 'bg-[#0286cd] text-white shadow-md shadow-[#0286cd]/30 font-bold'
-                    : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                    ? 'bg-[#0286cd] text-white shadow-md shadow-[#0286cd]/25 font-bold'
+                    : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
                 }`}
               >
                 <span className="truncate">{r.label}</span>
@@ -111,12 +113,12 @@ export function NavigationSidebarDrawer({ isOpen, onClose, currentHash, navigate
           })}
         </div>
 
-        {/* Drawer Footer */}
-        <div className="p-3 border-t border-slate-800 bg-slate-950/80 text-[11px] text-slate-400 flex items-center justify-between">
-          <span className="font-semibold text-slate-300">SA Emergency Cleaning</span>
-          <span className="text-[10px] font-mono text-slate-500">24/7 Response</span>
+        {/* Sidebar Footer */}
+        <div className="p-3 border-t border-slate-200 bg-slate-50/80 text-[11px] text-slate-500 flex items-center justify-between shrink-0">
+          <span className="font-semibold text-slate-700">SA Emergency Cleaning</span>
+          <span className="text-[10px] font-mono text-slate-400">24/7 Response</span>
         </div>
       </div>
-    </div>
+    </aside>
   );
 }

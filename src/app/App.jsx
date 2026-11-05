@@ -340,15 +340,6 @@ export default function App() {
   // 2. AUTHENTICATED STATE: Render Main Application with Navigation Header
   return (
     <div className="min-h-screen text-slate-800 flex flex-col login-card-gradient">
-      {/* Left-Side Drawer: Expands when clicking 3-stripe button */}
-      <NavigationSidebarDrawer 
-        isOpen={isSidebarOpen} 
-        onClose={() => setIsSidebarOpen(false)} 
-        currentHash={currentHash} 
-        navigateTo={navigateTo}
-        currentUser={currentUser}
-      />
-
       {/* Top Header with 3-Stripe Hamburger Menu & Universal Top-Right Log Out Button */}
       <header className="sticky top-0 z-50 bg-white/95 backdrop-blur-md border-b border-slate-200 shadow-sm px-4 lg:px-8 py-3 flex flex-wrap items-center justify-between gap-4">
         {/* Left Side: 3-Stripe Hamburger Menu Button + Logo + Title */}
@@ -506,8 +497,19 @@ export default function App() {
         </div>
       )}
 
-      {/* Main App Body */}
-      <main className="flex-1 p-4 lg:p-8 max-w-7xl w-full mx-auto space-y-8 pb-32">
+      {/* Attached Layout: Collapsible Sidebar + Main Screen Area (Slides within screen) */}
+      <div className="flex-1 flex w-full min-h-0 relative">
+        <NavigationSidebarDrawer 
+          isOpen={isSidebarOpen} 
+          onClose={() => setIsSidebarOpen(false)} 
+          currentHash={currentHash} 
+          navigateTo={navigateTo}
+          currentUser={currentUser}
+        />
+
+        {/* Main Content: Resizes smoothly beside the sidebar without being covered */}
+        <div className="flex-1 min-w-0 flex flex-col transition-all duration-300">
+          <main className="flex-1 p-4 lg:p-8 max-w-7xl w-full mx-auto space-y-8 pb-32">
         {/* CUSTOMER PORTAL VIEW */}
         {visibleTab === 'customer' && (
           <CustomerPortal 
@@ -567,6 +569,8 @@ export default function App() {
           />
         )}
       </main>
+        </div>
+      </div>
 
       {/* MODALS */}
       {showCompanyRegistrationModal && (
