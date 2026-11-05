@@ -61,9 +61,8 @@ h1, h2, h3, h4, h5, h6 {
 
 /* Custom Scroll Container Utility */
 .custom-scroll-container {
-  max-height: 580px;
   overflow-y: auto;
-  padding-right: 6px;
+  padding-right: 4px;
   scroll-behavior: smooth;
 }
 .custom-scroll-container::-webkit-scrollbar {
@@ -80,4 +79,3 @@ h1, h2, h3, h4, h5, h6 {
 .custom-scroll-container::-webkit-scrollbar-thumb:hover {
   background: #0f3cad;
 }
-

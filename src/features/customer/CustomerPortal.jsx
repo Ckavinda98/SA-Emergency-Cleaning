@@ -51,7 +51,7 @@ export function CustomerPortal({
   return (
     <div className="space-y-8">
       {/* Customer Header Info Bar with Settings Gear Dropdown */}
-      <div className="bg-white p-5 rounded-2xl flex flex-wrap items-center justify-between gap-4 border border-slate-200 shadow-md relative">
+      <div className="bg-white p-5 rounded-2xl flex flex-wrap items-center justify-between gap-4 border border-slate-200 shadow-sm relative">
         <div>
           <div className="flex items-center gap-2">
             <h2 className="text-xl font-bold text-slate-900">{account.businessName}</h2>
@@ -133,53 +133,10 @@ export function CustomerPortal({
         </div>
       </div>
 
-      {/* CENTERED PRIMARY EMERGENCY ASSISTANCE BANNER TILE (TOP OF SYSTEM) */}
-      {isCalloutsExhausted ? (
-        <div className="bg-gradient-to-br from-amber-700 via-amber-600 to-amber-800 p-8 rounded-3xl text-white text-center shadow-xl border border-amber-400/30 max-w-3xl mx-auto space-y-4">
-          <div className="inline-flex items-center justify-center p-3.5 rounded-2xl bg-white/10 backdrop-blur-md border border-white/20 shadow-inner">
-            <AlertTriangle className="w-8 h-8 text-amber-200 animate-pulse" />
-          </div>
-          <div className="space-y-1">
-            <h2 className="text-2xl font-black text-white tracking-tight">Call-out Limit Exhausted (0 Remaining)</h2>
-            <p className="text-sm font-semibold text-amber-100">
-              You have used all {account.calloutsUsed} of {activePlan?.callouts} call-outs for your {activePlan?.name} plan this month.
-            </p>
-          </div>
-          <div>
-            <button
-              onClick={() => setShowChangePlanModal(true)}
-              className="bg-white hover:bg-slate-100 text-amber-900 font-black py-4 px-8 rounded-2xl text-xs sm:text-sm inline-flex items-center justify-center gap-3 transition-all shadow-xl hover:scale-105 cursor-pointer border border-white"
-            >
-              <Shield className="w-5 h-5 text-amber-700" />
-              0 CALL-OUTS REMAINING - UPGRADE PLAN TO REQUEST
-            </button>
-          </div>
-        </div>
-      ) : (
-        <div className="bg-gradient-to-br from-[#0f3cad] via-[#0286cd] to-[#026fa8] p-8 rounded-3xl text-white text-center shadow-xl border border-white/20 max-w-3xl mx-auto space-y-4">
-          <div className="inline-flex items-center justify-center p-3.5 rounded-2xl bg-white/10 backdrop-blur-md border border-white/20 shadow-inner">
-            <ShieldAlert className="w-8 h-8 text-amber-300 animate-pulse" />
-          </div>
-          <div className="space-y-1">
-            <h2 className="text-2xl font-black text-white tracking-tight">Need Emergency Assistance?</h2>
-            <p className="text-sm font-semibold text-blue-100">2–4 Hour Target Attendance On-Site • 24/7 Response Desk</p>
-          </div>
-          <div>
-            <button
-              onClick={() => setShowNewRequestModal(true)}
-              className="bg-white hover:bg-slate-100 text-[#0f3cad] font-black py-4 px-8 rounded-2xl text-xs sm:text-sm inline-flex items-center justify-center gap-3 transition-all shadow-xl hover:scale-105 cursor-pointer border border-white"
-            >
-              <PlusCircle className="w-5 h-5 text-[#0f3cad]" />
-              REQUEST EMERGENCY CLEANING
-            </button>
-          </div>
-        </div>
-      )}
-
-      {/* DASHBOARD METRIC TILES GRID (BELOW MAIN REQUEST TILE) */}
+      {/* DASHBOARD METRIC TILES: 3 TILES HORIZONTAL IN ONE LINE AT TOP OF SCREEN */}
       <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        {/* Membership Plan Card */}
-        <div className="bg-white p-5 rounded-2xl border-l-4 border-l-[#0286cd] border border-slate-200 shadow-md space-y-2">
+        {/* Active Membership Plan Card */}
+        <div className="bg-white p-5 rounded-2xl border-l-4 border-l-[#0286cd] border border-slate-200 shadow-sm space-y-2 hover:shadow-md transition-all">
           <div className="flex items-center justify-between text-slate-500 text-xs font-semibold uppercase tracking-wider">
             <span>Active Membership</span>
             <Shield className="w-4 h-4 text-[#0286cd]" />
@@ -200,7 +157,7 @@ export function CustomerPortal({
         </div>
 
         {/* Included Call-Outs Balance Card */}
-        <div className="bg-white p-5 rounded-2xl border-l-4 border-l-emerald-500 border border-slate-200 shadow-md space-y-2 relative">
+        <div className="bg-white p-5 rounded-2xl border-l-4 border-l-emerald-500 border border-slate-200 shadow-sm space-y-2 relative hover:shadow-md transition-all">
           <div className="flex items-center justify-between text-slate-500 text-xs font-semibold uppercase tracking-wider">
             <span>Call-outs Remaining</span>
             <button 
@@ -224,8 +181,8 @@ export function CustomerPortal({
           </div>
         </div>
 
-        {/* Reward Points Wallet */}
-        <div className="bg-white p-5 rounded-2xl border-l-4 border-l-purple-500 border border-slate-200 shadow-md space-y-2">
+        {/* Reward Points Wallet Card */}
+        <div className="bg-white p-5 rounded-2xl border-l-4 border-l-purple-500 border border-slate-200 shadow-sm space-y-2 hover:shadow-md transition-all">
           <div className="flex items-center justify-between text-slate-500 text-xs font-semibold uppercase tracking-wider">
             <span>Reward Points Wallet</span>
             <Award className="w-4 h-4 text-purple-600" />
@@ -246,58 +203,102 @@ export function CustomerPortal({
         </div>
       </div>
 
-      {/* REQUESTS LIST WITH ONGOING / PAST TOGGLE BUTTONS */}
-      <div className="space-y-6">
-        <div className="flex flex-wrap items-center justify-between gap-4 border-b border-slate-200 pb-4">
-          <div>
-            <h3 className="text-lg font-black text-slate-900 flex items-center gap-2">
-              <Clock className="w-5 h-5 text-[#0286cd]" />
-              Emergency Call-outs & Service Logs
-            </h3>
-            <p className="text-xs text-slate-600">Track ongoing SLA dispatches and view past service completion history</p>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-3">
-            {/* Two Filter Toggle Buttons for Ongoing & Past */}
-            <div className="bg-slate-100 p-1 rounded-2xl border border-slate-300 flex items-center gap-1">
+      {/* MERGED SECTION: LEFT SIDE BLUE BANNER (SMALL WIDTH) + RIGHT SIDE SERVICE LOGS TABLE/RECORDS */}
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        {/* Left Column: Blue Emergency Assistance Banner (Small Width) */}
+        <div className="lg:col-span-4 lg:sticky lg:top-4 space-y-4">
+          {isCalloutsExhausted ? (
+            <div className="bg-gradient-to-br from-amber-700 via-amber-600 to-amber-800 p-6 sm:p-7 rounded-3xl text-white text-center shadow-lg border border-amber-400/30 flex flex-col items-center justify-center space-y-4">
+              <div className="inline-flex items-center justify-center p-3 rounded-2xl bg-white/10 backdrop-blur-md border border-white/20 shadow-inner">
+                <AlertTriangle className="w-7 h-7 text-amber-200 animate-pulse" />
+              </div>
+              <div className="space-y-1">
+                <h2 className="text-xl font-black text-white tracking-tight">Call-out Limit Exhausted</h2>
+                <p className="text-xs font-semibold text-amber-100">
+                  You have used all {account.calloutsUsed} of {activePlan?.callouts} call-outs for your {activePlan?.name} plan this month.
+                </p>
+              </div>
               <button
-                onClick={() => setRequestListTab('ongoing')}
-                className={`px-3.5 py-1.5 rounded-xl text-xs font-black flex items-center gap-1.5 transition-all cursor-pointer ${
-                  requestListTab === 'ongoing'
-                    ? 'bg-[#0286cd] text-white shadow-sm'
-                    : 'text-slate-700 hover:text-slate-900 font-semibold'
-                }`}
+                onClick={() => setShowChangePlanModal(true)}
+                className="w-full bg-white hover:bg-slate-100 text-amber-900 font-black py-3.5 px-6 rounded-2xl text-xs sm:text-sm inline-flex items-center justify-center gap-2 transition-all shadow-md hover:scale-[1.02] cursor-pointer border border-white"
               >
-                <Zap className="w-3.5 h-3.5" />
-                <span>Ongoing Requests ({ongoingJobs.length})</span>
-              </button>
-              <button
-                onClick={() => setRequestListTab('past')}
-                className={`px-3.5 py-1.5 rounded-xl text-xs font-black flex items-center gap-1.5 transition-all cursor-pointer ${
-                  requestListTab === 'past'
-                    ? 'bg-[#0286cd] text-white shadow-sm'
-                    : 'text-slate-700 hover:text-slate-900 font-semibold'
-                }`}
-              >
-                <FileText className="w-3.5 h-3.5" />
-                <span>Past Records ({pastJobs.length})</span>
+                <Shield className="w-4 h-4 text-amber-700 shrink-0" />
+                <span>UPGRADE PLAN TO REQUEST</span>
               </button>
             </div>
-
-            <button
-              onClick={() => isCalloutsExhausted ? setShowChangePlanModal(true) : setShowNewRequestModal(true)}
-              className={`font-extrabold px-3.5 py-2 rounded-xl text-xs flex items-center gap-1.5 shadow-md transition-all cursor-pointer ${
-                isCalloutsExhausted ? 'bg-amber-600 hover:bg-amber-500 text-white' : 'bg-[#0286cd] hover:bg-[#026fa8] text-white'
-              }`}
-            >
-              {isCalloutsExhausted ? <AlertTriangle className="w-4 h-4 text-white" /> : <Plus className="w-4 h-4" />}
-              {isCalloutsExhausted ? '0 CALL-OUTS REMAINING' : 'NEW REQUEST'}
-            </button>
-          </div>
+          ) : (
+            <div className="bg-gradient-to-br from-[#0f3cad] via-[#0286cd] to-[#026fa8] p-6 sm:p-7 rounded-3xl text-white text-center shadow-lg border border-white/20 flex flex-col items-center justify-center space-y-4">
+              <div className="inline-flex items-center justify-center p-3.5 rounded-2xl bg-white/10 backdrop-blur-md border border-white/20 shadow-inner">
+                <ShieldAlert className="w-8 h-8 text-amber-300 animate-pulse" />
+              </div>
+              <div className="space-y-1">
+                <h2 className="text-xl sm:text-2xl font-black text-white tracking-tight">Need Emergency Assistance?</h2>
+                <p className="text-xs sm:text-sm font-semibold text-blue-100">2–4 Hour Target Attendance On-Site • 24/7 Response Desk</p>
+              </div>
+              <button
+                onClick={() => setShowNewRequestModal(true)}
+                className="w-full bg-white hover:bg-slate-100 text-[#0f3cad] font-black py-3.5 px-6 rounded-2xl text-xs sm:text-sm inline-flex items-center justify-center gap-2.5 transition-all shadow-md hover:scale-[1.02] cursor-pointer border border-white"
+              >
+                <PlusCircle className="w-5 h-5 text-[#0f3cad] shrink-0" />
+                <span>REQUEST EMERGENCY CLEANING</span>
+              </button>
+            </div>
+          )}
         </div>
 
-        {displayedJobs.length > 0 ? (
-          <div className="custom-scroll-container space-y-6">
+        {/* Right Column: Emergency Call-outs & Service Logs Records (Larger Width) */}
+        <div className="lg:col-span-8 space-y-6">
+          {/* Header Bar with Title and the 3 Action / Filter Buttons */}
+          <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-sm flex flex-wrap items-center justify-between gap-4">
+            <div>
+              <h3 className="text-base sm:text-lg font-black text-slate-900 flex items-center gap-2">
+                <Clock className="w-5 h-5 text-[#0286cd]" />
+                Emergency Call-outs & Service Logs
+              </h3>
+              <p className="text-xs text-slate-500">Track ongoing SLA dispatches and view past service completion history</p>
+            </div>
+
+            {/* The 3 Buttons */}
+            <div className="flex flex-wrap items-center gap-2.5">
+              <div className="bg-slate-100 p-1 rounded-xl border border-slate-200 flex items-center gap-1">
+                <button
+                  onClick={() => setRequestListTab('ongoing')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                    requestListTab === 'ongoing'
+                      ? 'bg-[#0286cd] text-white shadow-sm'
+                      : 'text-slate-600 hover:text-slate-900 font-semibold'
+                  }`}
+                >
+                  <Zap className="w-3.5 h-3.5" />
+                  <span>Ongoing Requests ({ongoingJobs.length})</span>
+                </button>
+                <button
+                  onClick={() => setRequestListTab('past')}
+                  className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                    requestListTab === 'past'
+                      ? 'bg-[#0286cd] text-white shadow-sm'
+                      : 'text-slate-600 hover:text-slate-900 font-semibold'
+                  }`}
+                >
+                  <FileText className="w-3.5 h-3.5" />
+                  <span>Past Records ({pastJobs.length})</span>
+                </button>
+              </div>
+
+              <button
+                onClick={() => isCalloutsExhausted ? setShowChangePlanModal(true) : setShowNewRequestModal(true)}
+                className={`font-extrabold px-3.5 py-2 rounded-xl text-xs flex items-center gap-1.5 shadow-md transition-all cursor-pointer ${
+                  isCalloutsExhausted ? 'bg-amber-600 hover:bg-amber-500 text-white' : 'bg-[#0286cd] hover:bg-[#026fa8] text-white'
+                }`}
+              >
+                {isCalloutsExhausted ? <AlertTriangle className="w-4 h-4 text-white" /> : <Plus className="w-4 h-4" />}
+                <span>{isCalloutsExhausted ? '0 CALL-OUTS REMAINING' : '+ NEW REQUEST'}</span>
+              </button>
+            </div>
+          </div>
+
+          {displayedJobs.length > 0 ? (
+            <div className="space-y-6">
             {displayedJobs.map((job, idx) => {
               const photos = Array.isArray(job.photos) ? job.photos : JSON.parse(job.photosJson || '[]');
               const videos = Array.isArray(job.videos) ? job.videos : JSON.parse(job.videosJson || '[]');
@@ -605,6 +606,7 @@ export function CustomerPortal({
             )}
           </div>
         )}
+        </div>
       </div>
 
       {/* Reward Points Redemption Banner */}

@@ -30,16 +30,11 @@ export function NavigationSidebarDrawer({ isOpen, onClose, currentHash, navigate
   return (
     <aside
       aria-label="Navigation Sidebar"
-      className={`shrink-0 bg-white text-slate-800 border-r border-slate-200 transition-all duration-300 ease-in-out flex flex-col z-30 ${
+      className={`shrink-0 bg-white text-slate-800 border-r border-slate-200 transition-all duration-300 ease-in-out flex flex-col z-30 h-full ${
         isOpen 
           ? 'w-72 sm:w-80 opacity-100 shadow-lg' 
           : 'w-0 opacity-0 overflow-hidden border-r-0 pointer-events-none'
       }`}
-      style={{
-        height: 'calc(100vh - 61px)',
-        position: 'sticky',
-        top: '61px'
-      }}
     >
       {/* Inner fixed-width container to prevent text/layout squishing during slide */}
       <div className="w-72 sm:w-80 h-full flex flex-col overflow-hidden">
@@ -88,7 +83,7 @@ export function NavigationSidebarDrawer({ isOpen, onClose, currentHash, navigate
         )}
 
         {/* Scrollable Route List */}
-        <div className="flex-1 overflow-y-auto p-3 space-y-1.5 custom-scroll-container">
+        <div className="flex-1 min-h-0 overflow-y-auto p-3 space-y-1.5 custom-scroll-container">
           <div className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 px-2 py-1">
             Available Screens
           </div>

@@ -339,9 +339,9 @@ export default function App() {
 
   // 2. AUTHENTICATED STATE: Render Main Application with Navigation Header
   return (
-    <div className="min-h-screen text-slate-800 flex flex-col login-card-gradient">
+    <div className="h-screen overflow-hidden text-slate-800 flex flex-col login-card-gradient">
       {/* Top Header with 3-Stripe Hamburger Menu & Universal Top-Right Log Out Button */}
-      <header className="sticky top-0 z-50 bg-white/95 backdrop-blur-md border-b border-slate-200 shadow-sm px-4 lg:px-8 py-3 flex flex-wrap items-center justify-between gap-4">
+      <header className="shrink-0 z-50 bg-white/95 backdrop-blur-md border-b border-slate-200 shadow-sm px-4 lg:px-8 py-3 flex flex-wrap items-center justify-between gap-4">
         {/* Left Side: 3-Stripe Hamburger Menu Button + Logo + Title */}
         <div className="flex items-center gap-3">
           <button
@@ -497,8 +497,8 @@ export default function App() {
         </div>
       )}
 
-      {/* Attached Layout: Collapsible Sidebar + Main Screen Area (Slides within screen) */}
-      <div className="flex-1 flex w-full min-h-0 relative">
+      {/* Attached Layout: Collapsible Sidebar + Main Screen Area (Independent Scrollbars) */}
+      <div className="flex-1 flex w-full min-h-0 overflow-hidden relative">
         <NavigationSidebarDrawer 
           isOpen={isSidebarOpen} 
           onClose={() => setIsSidebarOpen(false)} 
@@ -507,8 +507,8 @@ export default function App() {
           currentUser={currentUser}
         />
 
-        {/* Main Content: Resizes smoothly beside the sidebar without being covered */}
-        <div className="flex-1 min-w-0 flex flex-col transition-all duration-300">
+        {/* Main Content: Independently scrollable container */}
+        <div className="flex-1 min-w-0 h-full overflow-y-auto flex flex-col transition-all duration-300">
           <main className="flex-1 p-4 lg:p-8 max-w-7xl w-full mx-auto space-y-8 pb-32">
         {/* CUSTOMER PORTAL VIEW */}
         {visibleTab === 'customer' && (
@@ -569,6 +569,12 @@ export default function App() {
           />
         )}
       </main>
+
+      {/* Footer */}
+      <footer className="border-t border-slate-200/80 py-6 px-4 text-center text-xs text-slate-500 mt-auto bg-white/40 shrink-0">
+        <p>© 2026 SA Commercial Cleaning Services Pty Ltd (SACC). All rights reserved.</p>
+        <p className="mt-1 text-[#0286cd]">Target Emergency Attendance Time: 2–4 hours from validated request timestamp. Azure Cloud Australia East (Sydney).</p>
+      </footer>
         </div>
       </div>
 
@@ -715,12 +721,6 @@ export default function App() {
           onClose={() => setShowCalloutExplanationModal(false)}
         />
       )}
-
-      {/* Footer */}
-      <footer className="border-t border-slate-900/80 py-6 px-4 text-center text-xs text-slate-500">
-        <p>© 2026 SA Commercial Cleaning Services Pty Ltd (SACC). All rights reserved.</p>
-        <p className="mt-1 text-cyan-400/60">Target Emergency Attendance Time: 2–4 hours from validated request timestamp. Azure Cloud Australia East (Sydney).</p>
-      </footer>
     </div>
   );
 }

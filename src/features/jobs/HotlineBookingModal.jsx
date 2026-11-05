@@ -64,7 +64,7 @@ export function HotlineBookingModal({ account, customerAccounts = [], config, on
       onsiteContact: callerName,
       onsitePhone: callerPhone,
       accessInstructions: 'Operator recorded phone request',
-      photos: ['https://images.unsplash.com/photo-1584622650111-993a426fbf0a?auto=format&fit=crop&w=600&q=80']
+      photos: []
     });
   };
 
