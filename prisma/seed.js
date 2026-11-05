@@ -1,7 +1,10 @@
 import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
 
-const prisma = new PrismaClient();
+// SACC_DB_URL lets the automated tests seed their own database (prisma/test.db)
+const prisma = process.env.SACC_DB_URL
+  ? new PrismaClient({ datasources: { db: { url: process.env.SACC_DB_URL } } })
+  : new PrismaClient();
 
 async function main() {
   console.log('Seeding SA Commercial Cleaning Database...');

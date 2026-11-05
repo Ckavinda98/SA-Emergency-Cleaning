@@ -4,8 +4,10 @@
 Businesses subscribe to a monthly plan, raise emergency requests, and an admin dispatches a technician
 who completes the job and produces a service report.
 
-- **Web app:** React 19 + Vite 6 + Tailwind CSS 4 (`src/App.jsx`)
-- **API:** Node.js + Express 5 (`server.js`)
+- **Web app:** React 19 + Vite 6 + Tailwind CSS 4 (`src/`, one folder per feature)
+- **API:** Node.js + Express 5 (`server/`, one module per domain; start it with `node server.js`)
+- **Shared rules:** `shared/` (job statuses, roles, plans, address check, Zod request schemas), used by both
+- **Tests:** Vitest + Supertest (`tests/`, run with `npm test`)
 - **Database:** Prisma 6 ORM over SQLite (`prisma/dev.db`) for local development
 - **Mobile:** Capacitor 7 Android project (`android/`)
 
@@ -143,7 +145,9 @@ This opens a browser table editor at <http://localhost:5555> where you can view 
 | Command | What it does |
 | :--- | :--- |
 | `npm run dev` | Start the web app with hot reload on port 3000 |
-| `node server.js` | Start the API on port 5000 |
+| `node server.js` (or `npm run server`) | Start the API on port 5000 |
+| `npm test` | Run the API and shared-rules tests (uses its own `prisma/test.db`, so `dev.db` is not touched) |
+| `npm run test:watch` | Re-run the tests on every save |
 | `npm run build` | Build the web app into `dist/` |
 | `npm run preview` | Serve the built `dist/` folder |
 | `npx prisma db push` | Apply `schema.prisma` changes to the database |
@@ -170,9 +174,9 @@ node prisma/seed.js
 | Setting | Default | How to change |
 | :--- | :--- | :--- |
 | API port | `5000` | `PORT` environment variable |
-| JWT secrets | development defaults in `server.js` | `JWT_SECRET` and `JWT_REFRESH_SECRET` environment variables. **Always set these outside local development.** |
+| JWT secrets | development defaults in `server/config/env.js` | `JWT_SECRET` and `JWT_REFRESH_SECRET` environment variables. **Always set these outside local development.** |
 | Web app port | `3000` | `vite.config.js` |
-| API address used by the web app | `http://localhost:5000/api` | `API_BASE` at the top of `src/App.jsx` |
+| API address used by the web app | `http://localhost:5000/api` | `VITE_API_BASE` in a `.env.local` file (read by `src/shared/config/env.js`), then restart `npm run dev` |
 
 Setting an environment variable for one run:
 
@@ -195,8 +199,8 @@ npm run cap:open      # open in Android Studio, then Run
 ```
 
 On a phone or emulator, `localhost` means the device itself, so the app cannot reach the API on your PC.
-Change `API_BASE` in `src/App.jsx` to your PC's address (for example `http://192.168.1.20:5000/api`;
-for the Android emulator use `http://10.0.2.2:5000/api`) and rebuild.
+Set `VITE_API_BASE` in `.env.local` to your PC's address (for example
+`VITE_API_BASE=http://192.168.1.20:5000/api`; for the Android emulator use `http://10.0.2.2:5000/api`) and rebuild.
 
 ---
 
@@ -204,22 +208,59 @@ for the Android emulator use `http://10.0.2.2:5000/api`) and rebuild.
 
 ```text
 SA-Emergency-Cleaning/
-├── server.js               Express REST API (auth, customers, jobs, technicians, points, logs)
+├── server.js                  Starts the API (just imports server/index.js)
+├── server/
+│   ├── index.js               Checks production secrets, then listens on PORT
+│   ├── app.js                 createApp(): middleware, routers, error handler (used by the tests too)
+│   ├── config/env.js          PORT, JWT secrets, token lifetimes
+│   ├── db/prisma.js           The one PrismaClient
+│   ├── middleware/            authenticate (token + public routes), requireRole, validate (Zod), errorHandler
+│   ├── lib/                   HttpError, audit and login logs, passwords, access checks, request helpers
+│   └── modules/               One folder per domain: auth, config, customers, jobs, technicians,
+│                              redemptions, invoices, analytics, logs, reports
+│                              Each has *.routes.js -> *.controller.js -> *.service.js
+├── shared/                    Rules used by BOTH the API and the web app
+│   ├── jobStatus.js           Job statuses and the technician's allowed steps
+│   ├── roles.js               Roles, which screens each role may open
+│   ├── config.js              Default plans, call-outs per plan, points maths
+│   ├── location.js            Adelaide / SA address check
+│   └── schemas.js             Zod request schemas
 ├── src/
-│   ├── App.jsx             Whole front end: customer, admin, technician and config workspaces
-│   ├── main.jsx            React entry point
-│   └── index.css           Tailwind + custom styles
+│   ├── main.jsx               React entry: installs the API client, renders <App />
+│   ├── app/                   App.jsx (session, routing, top bar) and layout/NavigationSidebarDrawer.jsx
+│   ├── features/              One folder per area; each index.js lists what other folders may import
+│   │   ├── auth/              LoginPortal, CompanyRegistrationModal
+│   │   ├── customer/          CustomerPortal, plan, profile, sites, cancel, points modals
+│   │   ├── jobs/              New / edit emergency request, hotline booking
+│   │   ├── technician/        TechnicianApp, TechnicianProfileModal
+│   │   ├── admin/             AdminOperationsHub, dispatch, technician and job-detail modals, live map
+│   │   └── config/            DynamicConfigStudio
+│   ├── reports/serviceReport.js   jsPDF download and printable report
+│   ├── shared/                api/client.js (token + refresh), config/env.js, constants/demoData.js
+│   └── index.css              Tailwind + custom styles
+├── tests/                     Vitest: tests/api (Supertest against createApp), tests/shared
 ├── prisma/
-│   ├── schema.prisma       Database models
-│   ├── seed.js             Demo data
-│   └── dev.db              Local SQLite database (created by db push)
-├── android/                Capacitor Android project
-├── public/                 Static files (logo)
-├── docs/                   Project map, tech spec, development plan, history
-├── clear_all_requests.js   Reset script for emergency requests
-├── capacitor.config.json   Mobile app id and settings
-└── vite.config.js          Vite + React + Tailwind config
+│   ├── schema.prisma          Database models
+│   ├── seed.js                Demo data
+│   └── dev.db                 Local SQLite database (created by db push)
+├── android/                   Capacitor Android project
+├── public/                    Static files (logo)
+├── docs/                      Project map, tech spec, development plan, history
+├── clear_all_requests.js      Reset script for emergency requests
+├── capacitor.config.json      Mobile app id and settings
+├── vitest.config.js           Test setup (test database, @ and @shared aliases)
+└── vite.config.js             Vite + React + Tailwind, aliases @ -> src and @shared -> shared
 ```
+
+### Where to put new code
+
+- **A new API endpoint:** add it to the right `server/modules/<domain>/` folder: the route in `*.routes.js`
+  (with `requireRole` and `validate(schema)`), a thin handler in `*.controller.js`, and the database work in
+  `*.service.js`. Throw `HttpError` (for example `notFound('Job not found.')`) instead of writing responses.
+- **A rule both sides need** (a status, a limit, a validation): put it in `shared/` and import it from the
+  API and from the web app (`@shared/...`).
+- **A new screen or modal:** put it in the feature folder it belongs to and export it from that folder's
+  `index.js`. Other features import from `@/features/<name>`, never from a file deep inside another feature.
 
 ---
 
