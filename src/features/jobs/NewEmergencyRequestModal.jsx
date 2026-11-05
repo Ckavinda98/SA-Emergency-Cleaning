@@ -13,21 +13,18 @@ export function NewEmergencyRequestModal({ account, config, onClose, onSubmit })
   const [selectedLocId, setSelectedLocId] = useState(account.locations?.[0]?.id || 'loc-1');
   const [category, setCategory] = useState('Toilet overflow');
   const [description, setDescription] = useState('');
-  const [affectedArea, setAffectedArea] = useState('25');
+  const [affectedArea, setAffectedArea] = useState('');
   const [incidentTime, setIncidentTime] = useState(new Date().toISOString().slice(0, 16));
   const [isOngoing, setIsOngoing] = useState(false);
   const [isSafeToAccess, setIsSafeToAccess] = useState(true);
-  const [onsiteContact, setOnsiteContact] = useState(account.primaryContactName || account.primaryContact || 'Mahima Sharma');
-  const [onsitePhone, setOnsitePhone] = useState(account.phoneNumber || account.phone || '0412 345 678');
-  const [accessInstructions, setAccessInstructions] = useState(account.locations?.[0]?.accessInstructions || 'Keypad Code #4829 on Rear Service Door');
-  const [accessRestrictions, setAccessRestrictions] = useState('Requires Hi-Vis vest & safety footwear after 6 PM');
-  const [parkingInstructions, setParkingInstructions] = useState('Loading Dock Bay 3 or Visitor Bay near main entrance');
+  const [onsiteContact, setOnsiteContact] = useState(account.primaryContactName || account.primaryContact || '');
+  const [onsitePhone, setOnsitePhone] = useState(account.phoneNumber || account.phone || '');
+  const [accessInstructions, setAccessInstructions] = useState(account.locations?.[0]?.accessInstructions || '');
+  const [accessRestrictions, setAccessRestrictions] = useState(account.locations?.[0]?.securityNotes || '');
+  const [parkingInstructions, setParkingInstructions] = useState(account.locations?.[0]?.parkingNotes || '');
   
   // Media Uploads
-  const [photoUrls, setPhotoUrls] = useState([
-    'https://images.unsplash.com/photo-1584622650111-993a426fbf0a?auto=format&fit=crop&w=600&q=80',
-    'https://images.unsplash.com/photo-1527515637462-cff94eecc1ac?auto=format&fit=crop&w=600&q=80'
-  ]);
+  const [photoUrls, setPhotoUrls] = useState([]);
   const [videoUrls, setVideoUrls] = useState([]);
   const [newPhotoInput, setNewPhotoInput] = useState('');
   const [newVideoInput, setNewVideoInput] = useState('');
