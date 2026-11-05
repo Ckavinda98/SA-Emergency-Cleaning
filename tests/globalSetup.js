@@ -7,7 +7,7 @@ import { resolve } from 'node:path';
 export default function setup() {
   const root = resolve(import.meta.dirname, '..');
   const dbFile = resolve(root, 'prisma', 'test.db');
-  const url = `file:${dbFile}`;
+  const url = `file:${dbFile.replace(/\\/g, '/')}`;
   const tmpSchema = resolve(root, 'prisma', 'schema.test.prisma');
 
   rmSync(dbFile, { force: true });
