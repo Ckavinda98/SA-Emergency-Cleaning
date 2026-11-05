@@ -1,102 +1,239 @@
-# 🚨 SA Emergency Cleaning
-> **24/7 Rapid Emergency Response, Multi-Site Management & Reward Points Engine**
-> Operating exclusively across Adelaide & South Australia (Postcodes 5000–5199).
+# SA Emergency Cleaning
+
+24/7 emergency cleaning membership platform for commercial businesses in Adelaide, South Australia.
+Businesses subscribe to a monthly plan, raise emergency requests, and an admin dispatches a technician
+who completes the job and produces a service report.
+
+- **Web app:** React 19 + Vite 6 + Tailwind CSS 4 (`src/App.jsx`)
+- **API:** Node.js + Express 5 (`server.js`)
+- **Database:** Prisma 6 ORM over SQLite (`prisma/dev.db`) for local development
+- **Mobile:** Capacitor 7 Android project (`android/`)
 
 ---
 
-## 📋 Overview
-**SA Emergency Cleaning** is a production-ready, full-stack emergency response system designed for commercial business accounts in South Australia. The system connects business customers, 24/7 admin operations dispatch, and field technicians for rapid 2–4 hour emergency attendance (floods, water damage, biohazard, toilet overflow, and hazardous spills).
+## 1. Prerequisites
+
+| Tool | Version | Check with |
+| :--- | :--- | :--- |
+| Node.js | 18 or newer (tested on 22) | `node -v` |
+| npm | 9 or newer | `npm -v` |
+| Android Studio | only for the mobile app | |
+
+No database server is needed. SQLite is a single file that Prisma creates for you.
 
 ---
 
-## ✨ Key System Features
+## 2. Run the project locally (first time)
 
-### 🏢 1. Customer Membership & Multi-Site Portal
-* **Tiered Membership Plans**: Essential ($99/mo), Business ($199/mo), and Premium ($399/mo) plans with monthly included 1-hour callouts.
-* **Multi-Site Site Selector**: Switch between Adelaide CBD Headquarters, North Adelaide Branch, Port Adelaide Warehouse, and custom sites.
-* **Emergency Cleaning Dispatch**: Submit incident category, affected area ($m^2$), access instructions, security notes, and photo/video attachments.
-* **Reward Points Wallet**: Earn 1 point per $10 spent. Features a strict **6-Month Tenure Verification Rule** before point redemptions unlock.
-* **Instant Native PDF Download**: Download crisp, high-resolution vector PDF service completion audit reports directly to your device.
+Open a terminal in the project folder (the one that contains `package.json`), for example:
 
-### 🛡️ 2. Admin Operations & Hotline Dispatch Desk
-* **SLA Performance Counter**: Real-time SLA response clock targeting 2–4 hour attendance.
-* **Interactive Technician Roster**: View field tech availability (`AVAILABLE`, `ON_SITE`, `OFF_DUTY`), ratings, and assigned jobs.
-* **24/7 Hotline Phone Order Entry**: Rapid booking modal for phone callers with automatic site and contact assignment.
-* **Dynamic Configuration Studio**: Live control over plan prices, overage rates ($120/hr), additional callout fees ($30), and reward point ratios.
-
-### 🔧 3. Field Technician Workstation
-* **7-Stage Job Lifecycle Workflow**:
-  1. `NEW` / `SUBMITTED`
-  2. `TECH_ASSIGNED`
-  3. `ACCEPTED`
-  4. `TRAVELLING` (GPS Transit tracking)
-  5. `ARRIVED` (Arrival timestamp logged)
-  6. `IN_PROGRESS` (Active 1-Hour Labour timer)
-  7. `COMPLETED` (Signed off with auto-generated PDF audit report)
-* **Live 60-Minute Labour Timer**: Interactive countdown with audio-visual alerts at 45, 55, and 60 minutes.
-* **Media Verification**: Upload on-site photo and video proof of completed work.
-
----
-
-## 🛠️ Technology Stack
-
-| Layer | Technology |
-| :--- | :--- |
-| **Frontend UI** | React 18, Vite 6, TailwindCSS |
-| **Icons & Design** | Lucide React, Glassmorphism, Responsive Flex |
-| **PDF Engine** | Native Vector `jsPDF` (window.jspdf.jsPDF) |
-| **Backend API** | Node.js, Express.js |
-| **Database & ORM** | SQLite (`prisma/dev.db`), Prisma ORM |
-| **Mobile Integration** | Capacitor JS (Android APK / iOS Ready) |
-
----
-
-## 🚀 Getting Started
-
-### Prerequisites
-* **Node.js**: v18.0.0 or higher
-* **npm**: v9.0.0 or higher
-
-### 1. Installation
-Clone the repository and install dependencies:
 ```bash
-git clone https://github.com/your-username/sa-emergency-cleaning.git
-cd sa-emergency-cleaning
+cd C:\Shared_Folder\CLEAN_AUS_PRJ01\Mahima_Proect\SA-Emergency-Cleaning
+```
+
+### Step 1: Install dependencies
+
+```bash
 npm install
 ```
 
-### 2. Database Initialization
-Ensure Prisma DB is synced:
+### Step 2: Create the database tables
+
 ```bash
 npx prisma db push
+```
+
+This reads `prisma/schema.prisma`, creates or updates the tables in `prisma/dev.db`, and generates the
+Prisma client. It keeps existing data. **Run it again every time `schema.prisma` changes.**
+
+### Step 3: Load the demo data
+
+```bash
 node prisma/seed.js
 ```
 
-### 3. Running Development Servers
+This adds the demo companies, technicians, admin users, plans and a few sample jobs.
+It is safe to run more than once: existing records are left as they are.
 
-Start the Node Express backend server (Port `5000`):
+### Step 4: Start the API server (terminal 1)
+
 ```bash
 node server.js
 ```
 
-In a separate terminal, start the Vite frontend development server (Port `3000`):
+You should see `Port: http://localhost:5000`. Check it at <http://localhost:5000/api/health>.
+
+### Step 5: Start the web app (terminal 2)
+
 ```bash
 npm run dev
 ```
 
-Open your browser at [http://localhost:3000](http://localhost:3000).
+Open <http://localhost:3000>. Keep both terminals running.
 
 ---
 
-## 🛡️ Input Validation Rules
+## 3. Demo logins
 
-The application enforces strict client-side and server-side validation:
-* **Business ABN**: Validated strictly to **11 numeric digits**.
-* **Phone Numbers**: Validated to Australian phone format (8–12 digits).
-* **Adelaide Location Restriction**: Street addresses must be within Adelaide, SA (postcodes 5000–5199).
-* **Incident Descriptions**: Minimum 5 characters required.
+All demo users have the password **`Password123!`**.
+
+| Role | Email | Lands on |
+| :--- | :--- | :--- |
+| Customer | `mahima@mahimaenterprises.com.au` | Customer dashboard (Mahima Commercial Enterprises) |
+| Customer | `dross@adelaidetower.com.au` | Customer dashboard (Adelaide Corporate Tower) |
+| Technician | `dave@sacleaning.com.au` | Technician app |
+| Technician | `chris@sacleaning.com.au` | Technician app |
+| Admin | `admin@sacleaning.com.au` | Admin dispatch desk (can also open every other workspace) |
+| Config | `config@sacleaning.com.au` | Dynamic Configuration Studio |
+
+You can also register a new business from the login screen and choose your own password
+(at least 8 characters). The address must be in Adelaide / SA (postcodes 5000–5199).
+
+In `npm run dev` the login screen shows a **Dev Demo Login** bar (Customer / Tech / Admin) that fills in
+the demo accounts. A production build (`npm run build`) never shows it and never prefills credentials.
+
+When an admin adds a customer or a technician, the server creates a random **temporary password** and
+shows it to the admin once, in a pop-up. Pass it on to the person; they can change it in their profile.
 
 ---
 
-## 📄 License & Ownership
-© 2026 **SA Emergency Cleaning Pty Ltd**. All Rights Reserved.
+## 4. How login works
+
+- Login is checked against the `User` table: the email must exist and the password must match its
+  bcrypt hash. There are no built-in or fallback users.
+- A successful login returns a 15-minute access token and a 7-day refresh token. The web app stores them
+  with Capacitor Preferences and refreshes them automatically.
+- Every `/api` route needs a valid token, except: `GET /api/health`, `GET /api/config`,
+  `POST /api/auth/register`, `POST /api/auth/login` and `POST /api/auth/refresh`.
+- The printable report `GET /api/jobs/:id/pdf-report` opens in a new tab, so the app passes the token as
+  `?token=...`. Without a valid token it returns `401`.
+- Customers only see their own company, jobs, sites, invoices and redemptions. Technicians can only move
+  jobs assigned to them, one step at a time (Accepted → Travelling → Arrived → In progress → Completed).
+  Admin-only actions (add/edit/delete technicians, add customers, approve points, create invoices,
+  reset jobs, read logs) return `403` for other roles. The menu only lists the screens your role can open.
+
+### What is recorded in the database
+
+| Table | What it stores |
+| :--- | :--- |
+| `LoginLog` | Every login success, failed login (with reason: `UNKNOWN_EMAIL`, `WRONG_PASSWORD`, `MISSING_FIELDS`), logout and rejected refresh token, with IP address and browser |
+| `AuditLog` | Every change made through the API: who, what action, which record, and the before/after values (`diffJson`). Covers job creation, edits, assignment and status changes, plan/profile/password changes, cancellations, config changes, sites, points redemptions and approvals, invoices, technician create/edit/status/delete and customer create/delete |
+| `JobStatusEvent` | Every status change of every job, with who made it and when. The service report timeline, response time and SLA result are built from it. `EmergencyRequest.workStartedAt` and `completedAt` give the labour time |
+
+Admins can read them through the API:
+
+- `GET /api/login-logs?limit=100&email=someone@example.com`
+- `GET /api/audit-logs?limit=100&entityType=EmergencyRequest&entityId=<job id>`
+
+---
+
+## 5. Look inside the database
+
+```bash
+npx prisma studio
+```
+
+This opens a browser table editor at <http://localhost:5555> where you can view `User`, `LoginLog`,
+`AuditLog`, `EmergencyRequest` and every other table.
+
+---
+
+## 6. Useful commands
+
+| Command | What it does |
+| :--- | :--- |
+| `npm run dev` | Start the web app with hot reload on port 3000 |
+| `node server.js` | Start the API on port 5000 |
+| `npm run build` | Build the web app into `dist/` |
+| `npm run preview` | Serve the built `dist/` folder |
+| `npx prisma db push` | Apply `schema.prisma` changes to the database |
+| `npx prisma studio` | Browse and edit the database |
+| `node prisma/seed.js` | Load demo data |
+| `node clear_all_requests.js` | Delete all emergency requests and reset call-out counters |
+| `npm run cap:build` | Build the web app and copy it into the Android project |
+| `npm run cap:open` | Open the Android project in Android Studio |
+
+### Start again with a clean database
+
+Stop the API server, then:
+
+```bash
+del prisma\dev.db          # Windows (macOS/Linux: rm prisma/dev.db)
+npx prisma db push
+node prisma/seed.js
+```
+
+---
+
+## 7. Configuration
+
+| Setting | Default | How to change |
+| :--- | :--- | :--- |
+| API port | `5000` | `PORT` environment variable |
+| JWT secrets | development defaults in `server.js` | `JWT_SECRET` and `JWT_REFRESH_SECRET` environment variables. **Always set these outside local development.** |
+| Web app port | `3000` | `vite.config.js` |
+| API address used by the web app | `http://localhost:5000/api` | `API_BASE` at the top of `src/App.jsx` |
+
+Setting an environment variable for one run:
+
+```bash
+# PowerShell
+$env:PORT=5050; node server.js
+# Command Prompt
+set PORT=5050 && node server.js
+# macOS / Linux
+PORT=5050 node server.js
+```
+
+---
+
+## 8. Android app
+
+```bash
+npm run cap:build     # build + sync into android/
+npm run cap:open      # open in Android Studio, then Run
+```
+
+On a phone or emulator, `localhost` means the device itself, so the app cannot reach the API on your PC.
+Change `API_BASE` in `src/App.jsx` to your PC's address (for example `http://192.168.1.20:5000/api`;
+for the Android emulator use `http://10.0.2.2:5000/api`) and rebuild.
+
+---
+
+## 9. Project structure
+
+```text
+SA-Emergency-Cleaning/
+├── server.js               Express REST API (auth, customers, jobs, technicians, points, logs)
+├── src/
+│   ├── App.jsx             Whole front end: customer, admin, technician and config workspaces
+│   ├── main.jsx            React entry point
+│   └── index.css           Tailwind + custom styles
+├── prisma/
+│   ├── schema.prisma       Database models
+│   ├── seed.js             Demo data
+│   └── dev.db              Local SQLite database (created by db push)
+├── android/                Capacitor Android project
+├── public/                 Static files (logo)
+├── docs/                   Project map, tech spec, development plan, history
+├── clear_all_requests.js   Reset script for emergency requests
+├── capacitor.config.json   Mobile app id and settings
+└── vite.config.js          Vite + React + Tailwind config
+```
+
+---
+
+## 10. Troubleshooting
+
+| Problem | Fix |
+| :--- | :--- |
+| Login fails with a server error mentioning `lastLoginAt`, `LoginLog` or `AuditLog` | The database is older than the schema. Run `npx prisma db push`, then restart `node server.js` |
+| Login always says "Cannot reach the server" | The API is not running. Start `node server.js` and check <http://localhost:5000/api/health> |
+| Login says "Invalid email or password" for a demo user | Run `node prisma/seed.js`. If you changed the password in the app, use the new one |
+| `EADDRINUSE: address already in use :::5000` | Another copy of the server is running. Close it, or start with a different `PORT` |
+| `npm install` fails with `ERESOLVE` | Make sure `package.json` has `@capacitor/preferences` at `^7.0.0` (it must match Capacitor 7), delete `node_modules`, run `npm install` again |
+| Changes to `schema.prisma` not showing | Run `npx prisma db push` (it regenerates the Prisma client) and restart the server |
+
+---
+
+© 2026 SA Emergency Cleaning Pty Ltd. All rights reserved.

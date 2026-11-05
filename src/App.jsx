@@ -1,13 +1,79 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import { Preferences } from '@capacitor/preferences';
 import { 
   ShieldAlert, Phone, Clock, MapPin, AlertTriangle, FileText, Award, 
   CheckCircle2, PlusCircle, User, Building, Wrench, Settings, ArrowRight, 
   UploadCloud, AlertCircle, Play, Check, X, Shield, RefreshCw, Send, 
   DollarSign, ChevronRight, Camera, FileCheck, PhoneCall, ExternalLink,
-  Users, BarChart3, Edit3, Trash2, Search, Filter, ShieldCheck, CheckSquare, Plus, ChevronDown, Zap, Download
+  Users, BarChart3, Edit3, Trash2, Search, Filter, ShieldCheck, CheckSquare, Plus, ChevronDown, Zap, Download,
+  Menu, LogOut
 } from 'lucide-react';
 
 const API_BASE = 'http://localhost:5000/api';
+const IS_DEV = Boolean(import.meta.env && import.meta.env.DEV);
+
+// --- AUTHENTICATED FETCH INTERCEPTOR ---
+const originalFetch = window.fetch;
+window.fetch = async (...args) => {
+  let [resource, config] = args;
+  
+  if (typeof resource === 'string' && resource.startsWith(API_BASE)) {
+    const { value: accessToken } = await Preferences.get({ key: 'sacc_access_token' });
+    if (accessToken) {
+      config = config || {};
+      config.headers = {
+        ...config.headers,
+        'Authorization': `Bearer ${accessToken}`
+      };
+    }
+  }
+
+  let response = await originalFetch(resource, config);
+
+  if (response.status === 401 && typeof resource === 'string' && resource.startsWith(API_BASE) &&
+      !resource.includes('/auth/login') && !resource.includes('/auth/register') && !resource.includes('/auth/refresh')) {
+    config = config || {};
+    const { value: refreshToken } = await Preferences.get({ key: 'sacc_refresh_token' });
+    if (refreshToken) {
+      const refreshRes = await originalFetch(`${API_BASE}/auth/refresh`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refreshToken })
+      });
+
+      if (refreshRes.ok) {
+        const { accessToken: newAccess, refreshToken: newRefresh } = await refreshRes.json();
+        await Preferences.set({ key: 'sacc_access_token', value: newAccess });
+        await Preferences.set({ key: 'sacc_refresh_token', value: newRefresh });
+        
+        config.headers = {
+          ...config.headers,
+          'Authorization': `Bearer ${newAccess}`
+        };
+        response = await originalFetch(resource, config);
+      } else {
+        localStorage.removeItem('sacc_current_user');
+        await Preferences.remove({ key: 'sacc_access_token' });
+        await Preferences.remove({ key: 'sacc_refresh_token' });
+        window.dispatchEvent(new Event('sacc:session-ended'));
+        window.location.hash = '#login';
+      }
+    } else {
+      localStorage.removeItem('sacc_current_user');
+      window.dispatchEvent(new Event('sacc:session-ended'));
+      window.location.hash = '#login';
+    }
+  }
+  return response;
+};
+// ----------------------------------------
+
+// Opens the printable report in a new tab. The tab cannot send the Authorization header,
+// so the current access token is passed in the URL and checked by the server.
+const openPrintableReport = async (jobId) => {
+  const { value: accessToken } = await Preferences.get({ key: 'sacc_access_token' });
+  window.open(`${API_BASE}/jobs/${jobId}/pdf-report?token=${encodeURIComponent(accessToken || '')}`, '_blank');
+};
 
 // Guaranteed Native Vector PDF Generator (Writes crisp PDF text & tables; 100% non-blank)
 const handleDownloadPdfReport = async (jobId, jobNumber) => {
@@ -31,14 +97,27 @@ const handleDownloadPdfReport = async (jobId, jobNumber) => {
     const { jsPDF } = window.jspdf;
     const doc = new jsPDF();
 
-    const submitTime = new Date(job.submittedAt || Date.now());
-    const submittedFormatted = submitTime.toLocaleString('en-AU', { timeZone: 'Australia/Adelaide', dateStyle: 'medium', timeStyle: 'short' });
-    const dispatchedFormatted = new Date(submitTime.getTime() + 5 * 60000).toLocaleString('en-AU', { timeZone: 'Australia/Adelaide', timeStyle: 'short' });
-    const acceptedFormatted = new Date(submitTime.getTime() + 10 * 60000).toLocaleString('en-AU', { timeZone: 'Australia/Adelaide', timeStyle: 'short' });
-    const travellingFormatted = new Date(submitTime.getTime() + 15 * 60000).toLocaleString('en-AU', { timeZone: 'Australia/Adelaide', timeStyle: 'short' });
-    const arrivedFormatted = new Date(submitTime.getTime() + 29 * 60000).toLocaleString('en-AU', { timeZone: 'Australia/Adelaide', timeStyle: 'short' });
-    const inProgressFormatted = new Date(submitTime.getTime() + 31 * 60000).toLocaleString('en-AU', { timeZone: 'Australia/Adelaide', timeStyle: 'short' });
-    const completedFormatted = new Date(job.updatedAt || (submitTime.getTime() + 91 * 60000)).toLocaleString('en-AU', { timeZone: 'Australia/Adelaide', dateStyle: 'medium', timeStyle: 'short' });
+    // All times come from the database: JobStatusEvent rows, workStartedAt and completedAt
+    const fmt = (d, withDate = false) => d
+      ? new Date(d).toLocaleString('en-AU', { timeZone: 'Australia/Adelaide', ...(withDate ? { dateStyle: 'medium' } : {}), timeStyle: 'short' })
+      : 'Not recorded';
+    const events = Array.isArray(job.statusEvents) ? job.statusEvents : [];
+    const firstAt = (statuses) => (events.find(e => statuses.includes(e.toStatus)) || {}).createdAt || null;
+    const arrivedAt = firstAt(['ARRIVED']);
+    const submittedFormatted = fmt(job.submittedAt, true);
+    const dispatchedFormatted = fmt(firstAt(['TECH_ASSIGNED', 'TECHNICIAN_ASSIGNED']));
+    const acceptedFormatted = fmt(firstAt(['ACCEPTED']));
+    const travellingFormatted = fmt(firstAt(['TRAVELLING']));
+    const arrivedFormatted = fmt(arrivedAt);
+    const inProgressFormatted = fmt(job.workStartedAt || firstAt(['IN_PROGRESS']));
+    const completedFormatted = fmt(job.completedAt || firstAt(['COMPLETED']), true);
+    const responseMins = arrivedAt ? Math.round((new Date(arrivedAt) - new Date(job.submittedAt)) / 60000) : null;
+    const labourMins = job.workStartedAt && job.completedAt
+      ? Math.max(1, Math.round((new Date(job.completedAt) - new Date(job.workStartedAt)) / 60000))
+      : (job.timerMinutes || 0);
+    const slaText = !arrivedAt ? 'Not yet attended'
+      : (job.targetAttendanceAt && new Date(arrivedAt) > new Date(job.targetAttendanceAt) ? 'MISSED' : 'PASSED (On Schedule)');
+    const isDone = ['COMPLETED', 'REPORT_ISSUED', 'CLOSED'].includes(job.status);
 
     // --- Header ---
     doc.setFillColor(2, 134, 205); // #0286cd
@@ -90,10 +169,10 @@ const handleDownloadPdfReport = async (jobId, jobNumber) => {
     doc.setFont('helvetica', 'normal');
     doc.text(`Category: ${job.category || 'Plumbing / Flood'} Emergency`, 112, 43);
     doc.text(`Submitted At: ${submittedFormatted}`, 112, 49);
-    doc.text(`Technician: ${job.technicianName || 'Dave Miller'}`, 112, 55);
+    doc.text(`Technician: ${job.technicianName || 'Unassigned'}`, 112, 55);
     doc.setTextColor(4, 120, 87);
     doc.setFont('helvetica', 'bold');
-    doc.text('Status: COMPLETED & SIGNED OFF', 112, 61);
+    doc.text(isDone ? 'Status: COMPLETED & SIGNED OFF' : `Status: ${job.status}`, 112, 61);
 
     // --- Job Timing Audit Log Table ---
     doc.setFillColor(2, 134, 205);
@@ -106,11 +185,11 @@ const handleDownloadPdfReport = async (jobId, jobNumber) => {
     const stages = [
       ['1. Request Submitted', submittedFormatted, String(job.customerName || 'Customer')],
       ['2. Admin Dispatched', dispatchedFormatted, 'SACC Operations Desk'],
-      ['3. Technician Accepted', acceptedFormatted, String(job.technicianName || 'Dave Miller')],
+      ['3. Technician Accepted', acceptedFormatted, String(job.technicianName || '-')],
       ['4. En Route (Transit Start)', travellingFormatted, 'GPS Location Transmitting'],
       ['5. Arrived On-Site', arrivedFormatted, String(job.locationName || 'Service Site')],
-      ['6. Cleaning Commenced', inProgressFormatted, '1-Hour Labour Active'],
-      ['7. Job Completed', completedFormatted, 'PDF Completion Signed']
+      ['6. Cleaning Commenced', inProgressFormatted, 'Labour timer started'],
+      ['7. Job Completed', completedFormatted, isDone ? 'Completed' : '-']
     ];
 
     let y = 87;
@@ -145,7 +224,7 @@ const handleDownloadPdfReport = async (jobId, jobNumber) => {
     doc.setFont('helvetica', 'bold');
     doc.text('TOTAL RESPONSE TIME', 18, y + 5);
     doc.setFontSize(10);
-    doc.text('29 Mins', 18, y + 11);
+    doc.text(responseMins === null ? 'Not recorded' : `${responseMins} Mins`, 18, y + 11);
 
     doc.setFillColor(240, 253, 244);
     doc.roundedRect(76, y, 58, 14, 2, 2, 'F');
@@ -154,7 +233,7 @@ const handleDownloadPdfReport = async (jobId, jobNumber) => {
     doc.setFont('helvetica', 'bold');
     doc.text('ON-SITE LABOUR DURATION', 80, y + 5);
     doc.setFontSize(10);
-    doc.text(`${job.timerMinutes || 60} Mins (Included)`, 80, y + 11);
+    doc.text(`${labourMins} Mins`, 80, y + 11);
 
     doc.setFillColor(250, 245, 255);
     doc.roundedRect(138, y, 58, 14, 2, 2, 'F');
@@ -163,7 +242,7 @@ const handleDownloadPdfReport = async (jobId, jobNumber) => {
     doc.setFont('helvetica', 'bold');
     doc.text('2-4 HR SLA TARGET', 142, y + 5);
     doc.setFontSize(10);
-    doc.text('PASSED (On Schedule)', 142, y + 11);
+    doc.text(slaText, 142, y + 11);
 
     // --- Work Performed & Scope Log ---
     y += 20;
@@ -179,7 +258,7 @@ const handleDownloadPdfReport = async (jobId, jobNumber) => {
     doc.setTextColor(30, 41, 59);
     doc.setFont('helvetica', 'normal');
     doc.text(`"${job.description || 'Emergency cleaning and hazard mitigation completed in full.'}"`, 18, y + 12);
-    doc.text(`Included Labor: ${job.timerMinutes || 60} Mins  |  Additional Overage Charges: $${job.additionalCharges || '0.00'}`, 18, y + 17);
+    doc.text(`Labour: ${labourMins} Mins  |  Additional Overage Charges: $${job.additionalCharges || '0.00'}`, 18, y + 17);
 
     // --- Footer ---
     doc.setDrawColor(226, 232, 240);
@@ -192,7 +271,7 @@ const handleDownloadPdfReport = async (jobId, jobNumber) => {
     doc.save(`SACC-Service-Completion-Report-${job.jobNumber || jobId}.pdf`);
   } catch (err) {
     console.error('jsPDF generation error:', err);
-    window.open(`${API_BASE}/jobs/${jobId}/pdf-report`, '_blank');
+    openPrintableReport(jobId);
   }
 };
 
@@ -293,48 +372,138 @@ const initialTechniciansList = [
   { id: 'tech-2', name: 'Chris Watson', phone: '0477 333 444', status: 'AVAILABLE', activeJobId: null, rating: 5.0, avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?auto=format&fit=crop&w=150&q=80' }
 ];
 
+// Which workspaces each role may open. Admin can open every workspace.
+const ROLE_TABS = {
+  customer: ['customer'],
+  technician: ['technician'],
+  config: ['config'],
+  admin: ['customer', 'technician', 'admin', 'config']
+};
+const ROLE_HOME = { customer: '#customer', technician: '#technician', config: '#config', admin: '#admin/dispatch' };
+const tabForHash = (hash) => {
+  if (hash.startsWith('#customer')) return 'customer';
+  if (hash.startsWith('#technician')) return 'technician';
+  if (hash.startsWith('#config')) return 'config';
+  if (hash.startsWith('#admin')) return 'admin';
+  return null;
+};
+const canOpenHash = (role, hash) => {
+  const tab = tabForHash(hash);
+  return !tab || (ROLE_TABS[role] || []).includes(tab);
+};
+
 /* =========================================================================
-   FAST SCREEN JUMPER ROUTING BAR
+   FAST SCREEN JUMPER LEFT-SIDE DRAWER (EXPANDS VIA 3-STRIPE BUTTON)
    ========================================================================= */
-function QuickRouteSwitcher({ currentHash, navigateTo }) {
-  const routes = [
-    { hash: '#login', label: '🔐 Login' },
-    { hash: '#register', label: '🏢 Register' },
+function NavigationSidebarDrawer({ isOpen, onClose, currentHash, navigateTo, currentUser }) {
+  if (!isOpen) return null;
+
+  const allRoutes = [
     { hash: '#customer', label: '📊 Customer Dashboard' },
-    { hash: '#customer/request', label: '🚨 Request Emergency' },
+    { hash: '#customer/request', label: '🚨 Request Emergency Cleaning' },
     { hash: '#customer/points', label: '🏆 Reward Points' },
     { hash: '#customer/profile', label: '👤 Profile & Password' },
     { hash: '#customer/cancel', label: '🛑 Cancel Membership' },
-    { hash: '#technician', label: '🔧 Technician App' },
+    { hash: '#technician', label: '🔧 Technician Dispatch App' },
     { hash: '#admin/dispatch', label: '🛡️ Admin Dispatch Desk' },
     { hash: '#admin/customers', label: '🏢 Customer Directory' },
     { hash: '#admin/register-company', label: '✍️ Admin Register Co.' },
     { hash: '#admin/technicians', label: '👨‍🔧 Technician Roster' },
     { hash: '#admin/points', label: '🎁 Points Approval' },
     { hash: '#admin/reports', label: '📈 Reports & Analytics' },
-    { hash: '#admin/hotline', label: '📞 Hotline Request' },
+    { hash: '#admin/hotline', label: '📞 Hotline Phone Request' },
     { hash: '#config', label: '⚙️ Config Studio' }
   ];
+  // Only list the screens this user's role is allowed to open
+  const routes = allRoutes.filter(r => canOpenHash(currentUser?.role, r.hash));
 
   return (
-    <div className="bg-slate-900 text-white text-[11px] py-2 px-4 border-b border-slate-800 shadow-md flex items-center gap-2 overflow-x-auto scrollbar-none sticky top-0 z-[60]">
-      <span className="font-extrabold text-[#0286cd] flex items-center gap-1 shrink-0 uppercase tracking-wider">
-        <Zap className="w-3.5 h-3.5 text-amber-400 animate-pulse" /> Fast Screen Jumper:
-      </span>
-      <div className="flex items-center gap-1.5 shrink-0">
-        {routes.map(r => (
-          <button
-            key={r.hash}
-            onClick={() => navigateTo(r.hash)}
-            className={`px-2.5 py-1 rounded-lg font-bold transition-all cursor-pointer whitespace-nowrap ${
-              currentHash === r.hash || (r.hash === '#customer' && (!currentHash || currentHash === '' || currentHash === '#'))
-                ? 'bg-[#0286cd] text-white shadow-sm ring-1 ring-white/30'
-                : 'bg-slate-800 text-slate-300 hover:bg-slate-700 hover:text-white'
-            }`}
+    <div className="fixed inset-0 z-[100] flex animate-in fade-in duration-200">
+      {/* Click outside backdrop to close */}
+      <div 
+        className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm transition-opacity cursor-pointer"
+        onClick={onClose}
+        aria-label="Close navigation sidebar"
+      />
+
+      {/* Top to Bottom Left Side Drawer */}
+      <div className="relative w-80 max-w-[85vw] bg-slate-900 text-white h-full shadow-2xl flex flex-col z-10 border-r border-slate-800 animate-in slide-in-from-left duration-200">
+        {/* Drawer Header */}
+        <div className="p-4 border-b border-slate-800 flex items-center justify-between bg-slate-950/80">
+          <div className="flex items-center gap-2.5">
+            <div className="bg-[#0286cd] p-2 rounded-xl text-white shadow-md shadow-[#0286cd]/30">
+              <Zap className="w-4 h-4 text-amber-300" />
+            </div>
+            <div>
+              <h2 className="text-xs font-black uppercase tracking-wider text-white">
+                Screen Jumper
+              </h2>
+              <p className="text-[10px] text-slate-400 font-medium">Quick switch screens & modules</p>
+            </div>
+          </div>
+          <button 
+            onClick={onClose}
+            className="p-1.5 rounded-xl text-slate-400 hover:text-white hover:bg-slate-800 transition-colors cursor-pointer"
+            title="Close menu"
           >
-            {r.label}
+            <X className="w-5 h-5" />
           </button>
-        ))}
+        </div>
+
+        {/* User Info banner if logged in */}
+        {currentUser && (
+          <div className="p-3 mx-3 mt-3 rounded-2xl bg-slate-800/80 border border-slate-700/60 flex items-center gap-2.5">
+            <div className="w-8 h-8 rounded-full bg-[#0286cd] text-white flex items-center justify-center font-black text-xs uppercase shrink-0 shadow-sm">
+              {currentUser.name ? currentUser.name.charAt(0) : 'U'}
+            </div>
+            <div className="min-w-0 flex-1">
+              <p className="text-xs font-bold text-white truncate">{currentUser.name}</p>
+              <div className="flex items-center gap-1.5 mt-0.5">
+                <span className="text-[9px] uppercase font-black px-1.5 py-0.5 rounded bg-[#0286cd]/20 text-[#0286cd] border border-[#0286cd]/40">
+                  {currentUser.role}
+                </span>
+                {currentUser.businessName && (
+                  <span className="text-[10px] text-slate-400 truncate max-w-[130px]">
+                    {currentUser.businessName}
+                  </span>
+                )}
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Scrollable Route List */}
+        <div className="flex-1 overflow-y-auto p-3 space-y-1.5 custom-scroll-container">
+          <div className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 px-2 py-1">
+            Available Screens
+          </div>
+          {routes.map(r => {
+            const isActive = currentHash === r.hash || (r.hash === '#customer' && (!currentHash || currentHash === '' || currentHash === '#'));
+            return (
+              <button
+                key={r.hash}
+                onClick={() => {
+                  navigateTo(r.hash);
+                  onClose();
+                }}
+                className={`w-full text-left px-3.5 py-2.5 rounded-xl font-semibold text-xs flex items-center justify-between transition-all cursor-pointer ${
+                  isActive
+                    ? 'bg-[#0286cd] text-white shadow-md shadow-[#0286cd]/30 font-bold'
+                    : 'text-slate-300 hover:bg-slate-800 hover:text-white'
+                }`}
+              >
+                <span className="truncate">{r.label}</span>
+                {isActive && <ChevronRight className="w-4 h-4 text-white shrink-0" />}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Drawer Footer */}
+        <div className="p-3 border-t border-slate-800 bg-slate-950/80 text-[11px] text-slate-400 flex items-center justify-between">
+          <span className="font-semibold text-slate-300">SA Emergency Cleaning</span>
+          <span className="text-[10px] font-mono text-slate-500">24/7 Response</span>
+        </div>
       </div>
     </div>
   );
@@ -346,15 +515,7 @@ export default function App() {
       const saved = localStorage.getItem('sacc_current_user');
       if (saved) return JSON.parse(saved);
     } catch (e) {}
-    return {
-      id: 'usr-cust-1',
-      name: 'Mahima Sharma',
-      email: 'mahima@mahimaenterprises.com.au',
-      role: 'customer',
-      businessId: 'cust-1',
-      businessName: 'Mahima Commercial Enterprises Pty Ltd',
-      avatar: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=150&q=80'
-    };
+    return null;
   });
   const [activeTab, setActiveTab] = useState(() => {
     try {
@@ -364,7 +525,16 @@ export default function App() {
     return 'customer';
   });
   const [adminSubTab, setAdminSubTab] = useState('dispatch');
-  const [currentHash, setCurrentHash] = useState(typeof window !== 'undefined' ? (window.location.hash || '#customer') : '#customer');
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [currentHash, setCurrentHash] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const hash = window.location.hash;
+      const saved = localStorage.getItem('sacc_current_user');
+      if (!saved) return (hash === '#register' ? '#register' : '#login');
+      return hash || '#customer';
+    }
+    return '#login';
+  });
 
   const navigateTo = (hash) => {
     window.location.hash = hash;
@@ -393,33 +563,63 @@ export default function App() {
   const [showTechSettingsMenu, setShowTechSettingsMenu] = useState(false);
   const [showTechProfileModal, setShowTechProfileModal] = useState(false);
 
+  // The fetch interceptor fires this when the refresh token is rejected
+  useEffect(() => {
+    const onSessionEnded = () => setCurrentUser(null);
+    window.addEventListener('sacc:session-ended', onSessionEnded);
+    return () => window.removeEventListener('sacc:session-ended', onSessionEnded);
+  }, []);
+
   // Save session state to localStorage on updates
   useEffect(() => {
     if (currentUser) {
       localStorage.setItem('sacc_current_user', JSON.stringify(currentUser));
+    } else {
+      localStorage.removeItem('sacc_current_user');
+      localStorage.removeItem('sacc_active_tab');
     }
   }, [currentUser]);
 
   useEffect(() => {
-    if (activeTab) {
+    if (activeTab && currentUser) {
       localStorage.setItem('sacc_active_tab', activeTab);
     }
-  }, [activeTab]);
+  }, [activeTab, currentUser]);
 
-  // Hash-based Browser Routing Engine
+  // Hash-based Browser Routing Engine.
+  // The listener reads the user from a ref, so a hash change fired right after login sees the new user.
+  const currentUserRef = useRef(currentUser);
+  currentUserRef.current = currentUser;
+
   useEffect(() => {
     const handleHashChange = () => {
-      const hash = window.location.hash || '#customer';
+      const user = currentUserRef.current;
+      const hash = window.location.hash || (user ? (ROLE_HOME[user.role] || '#customer') : '#login');
       setCurrentHash(hash);
 
+      if (!user) {
+        if (hash !== '#login' && hash !== '#register') {
+          window.location.hash = '#login';
+        }
+        return;
+      }
+
+      // Already signed in: the login page sends you to your own workspace
       if (hash === '#login') {
         setShowCompanyRegistrationModal(false);
+        window.location.hash = ROLE_HOME[user.role] || '#customer';
         return;
       }
 
       if (hash === '#register') {
         setRegistrationModalMode('public');
         setShowCompanyRegistrationModal(true);
+        return;
+      }
+
+      // A role can only open its own workspaces, whatever the URL says
+      if (!canOpenHash(user.role, hash)) {
+        window.location.hash = ROLE_HOME[user.role] || '#login';
         return;
       }
 
@@ -456,55 +656,71 @@ export default function App() {
     handleHashChange();
     window.addEventListener('hashchange', handleHashChange);
     return () => window.removeEventListener('hashchange', handleHashChange);
-  }, []);
+  }, [currentUser]);
 
-  // Fetch Real Data from Backend API Server
-  useEffect(() => {
-    async function fetchData() {
-      try {
-        const healthRes = await fetch(`${API_BASE}/health`);
-        const healthData = await healthRes.json();
-        if (healthData.status === 'ONLINE') {
-          setDbStatus('ONLINE (Azure/SQLite DB)');
-        }
+  // Fetch Real Data from Backend API Server (runs again whenever a different user signs in)
+  const loadData = async () => {
+    try {
+      const healthRes = await fetch(`${API_BASE}/health`);
+      const healthData = await healthRes.json();
+      if (healthData.status === 'ONLINE') {
+        setDbStatus('ONLINE (Azure/SQLite DB)');
+      }
 
-        const configRes = await fetch(`${API_BASE}/config`);
-        const configData = await configRes.json();
-        if (configData.membershipPlans) setConfig(configData);
+      const configRes = await fetch(`${API_BASE}/config`);
+      const configData = await configRes.json();
+      if (configData.membershipPlans) setConfig(configData);
 
-        const custRes = await fetch(`${API_BASE}/customers`);
-        const custData = await custRes.json();
-        if (custData && custData.length > 0) setCustomerAccounts(custData);
+      // Everything below needs a signed-in user
+      if (!currentUser) return;
 
-        const jobsRes = await fetch(`${API_BASE}/jobs`);
-        const jobsData = await jobsRes.json();
-        if (jobsData) setJobs(jobsData);
+      const custRes = await fetch(`${API_BASE}/customers`);
+      const custData = await custRes.json();
+      if (custRes.ok && Array.isArray(custData) && custData.length > 0) setCustomerAccounts(custData);
 
+      const jobsRes = await fetch(`${API_BASE}/jobs`);
+      const jobsData = await jobsRes.json();
+      if (jobsRes.ok && Array.isArray(jobsData)) setJobs(jobsData);
+
+      if (['admin', 'technician', 'config'].includes(currentUser.role)) {
         const techRes = await fetch(`${API_BASE}/technicians`);
         const techData = await techRes.json();
-        if (techData && techData.length > 0) setTechnicians(techData);
-
-      } catch (err) {
-        console.warn('Backend API server offline. Using fallback in-memory state.', err);
-        setDbStatus('OFFLINE (Fallback)');
+        if (techRes.ok && Array.isArray(techData)) setTechnicians(techData);
       }
+    } catch (err) {
+      console.warn('Backend API server offline.', err);
+      setDbStatus('OFFLINE');
     }
-    fetchData();
-  }, []);
+  };
+
+  useEffect(() => {
+    loadData();
+  }, [currentUser?.id]);
 
   const activeCustomer = customerAccounts.find(c => c.id === selectedCustomerId) || customerAccounts[0];
   const activeJob = jobs[0];
   const activePlan = config.membershipPlans.find(p => p.id === activeCustomer.membershipPlan) || config.membershipPlans[1];
 
   // Handle Login Event
-  const handleLogin = (user) => {
+  const handleLogin = async (user, accessToken, refreshToken) => {
+    if (accessToken) await Preferences.set({ key: 'sacc_access_token', value: accessToken });
+    if (refreshToken) await Preferences.set({ key: 'sacc_refresh_token', value: refreshToken });
+    
     setCurrentUser(user);
-    if (user.role === 'customer') {
+    if (user.businessId) setSelectedCustomerId(user.businessId);
+    else if (user.organizationId) setSelectedCustomerId(user.organizationId);
+    
+    // Routing relies strictly on the authenticated credential role returned by the server
+    const role = (user.role || '').toLowerCase();
+    if (role === 'customer') {
       setActiveTab('customer');
       navigateTo('#customer');
-    } else if (user.role === 'technician') {
+    } else if (role === 'technician') {
       setActiveTab('technician');
       navigateTo('#technician');
+    } else if (role === 'config') {
+      setActiveTab('config');
+      navigateTo('#config');
     } else {
       setActiveTab('admin');
       navigateTo('#admin/dispatch');
@@ -512,33 +728,45 @@ export default function App() {
   };
 
   // Handle Logout Event
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    try {
+      await fetch(`${API_BASE}/auth/logout`, { method: 'POST' });
+    } catch (e) {
+      console.warn('Logout could not reach the server:', e);
+    }
     try {
       localStorage.removeItem('sacc_current_user');
       localStorage.removeItem('sacc_active_tab');
+      await Preferences.remove({ key: 'sacc_access_token' });
+      await Preferences.remove({ key: 'sacc_refresh_token' });
     } catch (e) {}
     setCurrentUser(null);
     navigateTo('#login');
   };
 
   // Handle Registration Success
-  const handleRegisterSuccess = (newCustomer, payload) => {
+  const handleRegisterSuccess = async (newCustomer, payload) => {
     setCustomerAccounts([newCustomer, ...customerAccounts]);
     setSelectedCustomerId(newCustomer.id);
     setShowCompanyRegistrationModal(false);
 
     if (registrationModalMode === 'public') {
-      // Auto login newly registered public company
-      const companyUser = {
-        id: `usr-${newCustomer.id}`,
-        name: newCustomer.primaryContactName,
-        email: newCustomer.email,
-        role: 'customer',
-        businessId: newCustomer.id,
-        businessName: newCustomer.businessName,
-        avatar: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=150&q=80'
-      };
-      handleLogin(companyUser);
+      // Sign the new company in through the normal login so it gets real tokens
+      try {
+        const res = await fetch(`${API_BASE}/auth/login`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: payload.email, password: payload.password })
+        });
+        const data = await res.json();
+        if (res.ok && data.user) {
+          await handleLogin(data.user, data.accessToken, data.refreshToken);
+        } else {
+          navigateTo('#login');
+        }
+      } catch (e) {
+        navigateTo('#login');
+      }
     }
   };
 
@@ -569,20 +797,19 @@ export default function App() {
   useEffect(() => {
     const interval = setInterval(() => {
       setJobs(prevJobs => prevJobs.map(job => {
-        if (job.status === 'IN_PROGRESS' && job.timerActive) {
-          return { ...job, timerMinutes: job.timerMinutes + 1 };
+        if (job.status === 'IN_PROGRESS' && job.workStartedAt) {
+          return { ...job, timerMinutes: Math.max(0, Math.floor((Date.now() - new Date(job.workStartedAt).getTime()) / 60000)) };
         }
         return job;
       }));
-    }, 60000);
+    }, 30000);
     return () => clearInterval(interval);
   }, []);
 
-  // 1. UNAUTHENTICATED STATE: Render Login Portal Screen
+  // 1. UNAUTHENTICATED STATE: Render Login Portal Screen (No sidebar/hamburger button on login or register)
   if (!currentUser) {
     return (
       <>
-        <QuickRouteSwitcher currentHash={currentHash} navigateTo={navigateTo} />
         <LoginPortal 
           onLogin={handleLogin} 
           dbStatus={dbStatus} 
@@ -601,13 +828,35 @@ export default function App() {
     );
   }
 
+  // Each role may only open its own workspaces, whatever the URL or saved tab says
+  const allowedTabs = ROLE_TABS[currentUser.role] || [];
+  const visibleTab = allowedTabs.includes(activeTab) ? activeTab : allowedTabs[0];
+
   // 2. AUTHENTICATED STATE: Render Main Application with Navigation Header
   return (
     <div className="min-h-screen text-slate-800 flex flex-col login-card-gradient">
-      <QuickRouteSwitcher currentHash={currentHash} navigateTo={navigateTo} />
-      {/* Top Header with Official Transparent Logo & User Navigation */}
+      {/* Left-Side Drawer: Expands when clicking 3-stripe button */}
+      <NavigationSidebarDrawer 
+        isOpen={isSidebarOpen} 
+        onClose={() => setIsSidebarOpen(false)} 
+        currentHash={currentHash} 
+        navigateTo={navigateTo}
+        currentUser={currentUser}
+      />
+
+      {/* Top Header with 3-Stripe Hamburger Menu & Universal Top-Right Log Out Button */}
       <header className="sticky top-0 z-50 bg-white/95 backdrop-blur-md border-b border-slate-200 shadow-sm px-4 lg:px-8 py-3 flex flex-wrap items-center justify-between gap-4">
+        {/* Left Side: 3-Stripe Hamburger Menu Button + Logo + Title */}
         <div className="flex items-center gap-3">
+          <button
+            onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+            aria-label="Toggle navigation drawer"
+            className="p-2.5 rounded-xl text-slate-700 hover:text-[#0286cd] hover:bg-blue-50 border border-slate-300 transition-all cursor-pointer shadow-sm flex items-center justify-center"
+            title={isSidebarOpen ? "Close Navigation Menu" : "Open Navigation Menu"}
+          >
+            <Menu className="w-5 h-5 text-slate-800" />
+          </button>
+
           <div className="bg-[#e4e4e4] p-2 rounded-xl shadow-sm border border-slate-300 flex items-center justify-center">
             <img src="/logo.webp" alt="SA Commercial Cleaning Services" className="h-9 w-auto object-contain" />
           </div>
@@ -619,61 +868,76 @@ export default function App() {
           </div>
         </div>
 
-        {/* Customer Account Selector Dropdown (Shown for Admin role) */}
-        {(currentUser.role === 'admin') && (
-          <div className="flex items-center gap-2 bg-slate-50 border border-slate-300 px-3.5 py-1.5 rounded-xl shadow-sm">
-            <Building className="w-4 h-4 text-[#0286cd]" />
-            <div className="text-left">
-              <div className="text-[9px] text-slate-500 uppercase font-extrabold">Active Business Account:</div>
-              <select
-                value={selectedCustomerId}
-                onChange={(e) => setSelectedCustomerId(e.target.value)}
-                className="bg-transparent text-xs font-extrabold text-[#0286cd] focus:outline-none cursor-pointer"
-              >
-                {customerAccounts.map(c => (
-                  <option key={c.id} value={c.id} className="bg-white text-slate-900 font-medium">
-                    {c.businessName} ({c.membershipPlan.toUpperCase()})
-                  </option>
-                ))}
-              </select>
+        {/* Top Right Corner: Account Selector + User Badge + Universal Log Out Button for All User Types */}
+        <div className="flex items-center gap-3">
+          {/* Customer Account Selector Dropdown (Shown for Admin role) */}
+          {(currentUser.role === 'admin') && (
+            <div className="flex items-center gap-2 bg-slate-50 border border-slate-300 px-3.5 py-1.5 rounded-xl shadow-sm">
+              <Building className="w-4 h-4 text-[#0286cd]" />
+              <div className="text-left">
+                <div className="text-[9px] text-slate-500 uppercase font-extrabold">Active Business Account:</div>
+                <select
+                  value={selectedCustomerId}
+                  onChange={(e) => setSelectedCustomerId(e.target.value)}
+                  className="bg-transparent text-xs font-extrabold text-[#0286cd] focus:outline-none cursor-pointer"
+                >
+                  {customerAccounts.map(c => (
+                    <option key={c.id} value={c.id} className="bg-white text-slate-900 font-medium">
+                      {c.businessName} ({c.membershipPlan.toUpperCase()})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
+          )}
+
+          {/* User Badge / Info Pill */}
+          <div className="hidden sm:flex items-center gap-2.5 bg-slate-50 border border-slate-200 px-3 py-1.5 rounded-xl shadow-sm">
+            <div className="w-7 h-7 rounded-full bg-[#0286cd] text-white flex items-center justify-center font-black text-xs shrink-0 shadow-sm">
+              {currentUser.name ? currentUser.name.charAt(0) : 'U'}
+            </div>
+            <div className="text-left leading-tight">
+              <div className="text-xs font-black text-slate-900 truncate max-w-[130px]">{currentUser.name}</div>
+              <div className="text-[10px] font-extrabold text-[#0286cd] uppercase">{currentUser.role}</div>
             </div>
           </div>
-        )}
 
-        {/* Technician Settings Gear Icon Dropdown (Shown for Technician role) */}
-        {(currentUser.role === 'technician') && (
-          <div className="relative">
-            <button
-              onClick={() => setShowTechSettingsMenu(!showTechSettingsMenu)}
-              className="p-2.5 rounded-2xl bg-slate-100 hover:bg-slate-200 border border-slate-300 text-slate-700 transition-all cursor-pointer shadow-sm flex items-center gap-2 font-bold text-xs"
-            >
-              <Settings className="w-5 h-5 text-[#0286cd]" />
-              <span className="hidden sm:inline">Settings</span>
-              <ChevronDown className="w-3.5 h-3.5 text-slate-500" />
-            </button>
+          {/* Technician Settings Gear Icon Dropdown (Shown for Technician role) */}
+          {(currentUser.role === 'technician') && (
+            <div className="relative">
+              <button
+                onClick={() => setShowTechSettingsMenu(!showTechSettingsMenu)}
+                className="p-2.5 rounded-2xl bg-slate-100 hover:bg-slate-200 border border-slate-300 text-slate-700 transition-all cursor-pointer shadow-sm flex items-center gap-2 font-bold text-xs"
+              >
+                <Settings className="w-4 h-4 text-[#0286cd]" />
+                <span className="hidden sm:inline">Settings</span>
+                <ChevronDown className="w-3.5 h-3.5 text-slate-500" />
+              </button>
 
-            {showTechSettingsMenu && (
-              <div className="absolute right-0 mt-2 w-48 bg-white rounded-2xl shadow-2xl border border-slate-200 py-2 z-50 text-xs">
-                <button
-                  onClick={() => { setShowTechSettingsMenu(false); setShowTechProfileModal(true); }}
-                  className="w-full text-left px-4 py-2.5 hover:bg-slate-50 flex items-center gap-2 font-semibold text-slate-800"
-                >
-                  <User className="w-4 h-4 text-[#0286cd]" />
-                  <span>Profile</span>
-                </button>
-                <div className="border-t border-slate-100 my-1"></div>
-                <button
-                  onClick={handleLogout}
-                  className="w-full text-left px-4 py-2.5 hover:bg-red-50 flex items-center gap-2 font-semibold text-red-600"
-                >
-                  <X className="w-4 h-4 text-red-500" />
-                  <span>Log Out</span>
-                </button>
-              </div>
-            )}
-          </div>
-        )}
+              {showTechSettingsMenu && (
+                <div className="absolute right-0 mt-2 w-48 bg-white rounded-2xl shadow-2xl border border-slate-200 py-2 z-50 text-xs">
+                  <button
+                    onClick={() => { setShowTechSettingsMenu(false); setShowTechProfileModal(true); }}
+                    className="w-full text-left px-4 py-2.5 hover:bg-slate-50 flex items-center gap-2 font-semibold text-slate-800"
+                  >
+                    <User className="w-4 h-4 text-[#0286cd]" />
+                    <span>Profile</span>
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
 
+          {/* UNIVERSAL LOG OUT BUTTON FOR EACH USER TYPE */}
+          <button
+            onClick={handleLogout}
+            className="flex items-center gap-1.5 bg-red-50 hover:bg-red-100 text-red-600 hover:text-red-700 border border-red-200 hover:border-red-300 font-extrabold px-3.5 py-2 rounded-xl text-xs transition-all shadow-sm cursor-pointer"
+            title="Log Out of System"
+          >
+            <LogOut className="w-4 h-4 text-red-500 shrink-0" />
+            <span className="hidden sm:inline">Log Out</span>
+          </button>
+        </div>
       </header>
 
       {/* NATIVE ANDROID MOBILE TOUCH BOTTOM NAVIGATION BAR (Admin Only) */}
@@ -740,7 +1004,7 @@ export default function App() {
       {/* Main App Body */}
       <main className="flex-1 p-4 lg:p-8 max-w-7xl w-full mx-auto space-y-8 pb-32">
         {/* CUSTOMER PORTAL VIEW */}
-        {activeTab === 'customer' && (
+        {visibleTab === 'customer' && (
           <CustomerPortal 
             account={activeCustomer} 
             activePlan={activePlan} 
@@ -759,7 +1023,7 @@ export default function App() {
         )}
 
         {/* TECHNICIAN MOBILE APP VIEW */}
-        {activeTab === 'technician' && (
+        {visibleTab === 'technician' && (
           <TechnicianApp 
             jobs={jobs}
             setJobs={setJobs}
@@ -772,7 +1036,7 @@ export default function App() {
         )}
 
         {/* ADMIN OPERATIONS & ACCOUNTS HUB VIEW */}
-        {activeTab === 'admin' && (
+        {visibleTab === 'admin' && (
           <AdminOperationsHub 
             jobs={jobs}
             setJobs={setJobs}
@@ -791,7 +1055,7 @@ export default function App() {
         )}
 
         {/* DYNAMIC ADMIN CONFIG STUDIO */}
-        {activeTab === 'config' && (
+        {visibleTab === 'config' && (
           <DynamicConfigStudio 
             config={config}
             setConfig={setConfig}
@@ -814,6 +1078,8 @@ export default function App() {
           account={activeCustomer}
           onClose={() => setShowProfileModal(false)}
           onUpdateSuccess={handleProfileUpdateSuccess}
+          onSitesChanged={(updated) => setCustomerAccounts(prev => prev.map(c => c.id === updated.id ? updated : c))}
+          handleLogout={handleLogout}
         />
       )}
 
@@ -852,15 +1118,18 @@ export default function App() {
               });
               const data = await res.json();
               if (!res.ok || data.error) {
-                alert(data.error || 'Call-out limit reached. Please upgrade your membership plan.');
-                setShowNewRequestModal(false);
-                setShowChangePlanModal(true);
+                alert(data.error || 'The emergency request could not be submitted.');
+                // Offer a plan upgrade only when the call-out allowance is used up
+                if ((data.error || '').includes('Call-out Limit')) {
+                  setShowNewRequestModal(false);
+                  setShowChangePlanModal(true);
+                }
                 return;
               }
               setJobs([data, ...jobs]);
               setCustomerAccounts(customerAccounts.map(c => c.id === activeCustomer.id ? { ...c, calloutsUsed: (c.calloutsUsed || 0) + 1 } : c));
             } catch (err) {
-              setJobs([newJobData, ...jobs]);
+              alert('Network error: Unable to submit emergency request to server.');
             }
             setShowNewRequestModal(false);
           }}
@@ -888,8 +1157,7 @@ export default function App() {
               setJobs(jobs.map(j => j.id === editingJob.id ? data : j));
               setEditingJob(null);
             } catch (err) {
-              setJobs(jobs.map(j => j.id === editingJob.id ? { ...j, ...updatedFields } : j));
-              setEditingJob(null);
+              alert('Network error: Unable to save your changes to the server. Nothing was changed.');
             }
           }}
         />
@@ -898,11 +1166,26 @@ export default function App() {
       {showHotlineModal && (
         <HotlineBookingModal 
           account={activeCustomer}
+          customerAccounts={customerAccounts}
           config={config}
           onClose={() => setShowHotlineModal(false)}
-          onSubmit={(newJob) => {
-            setJobs([newJob, ...jobs]);
-            setShowHotlineModal(false);
+          onSubmit={async (newJobData) => {
+            try {
+              const res = await fetch(`${API_BASE}/jobs`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(newJobData)
+              });
+              const data = await res.json();
+              if (res.ok && data.id) {
+                setJobs([data, ...jobs]);
+                setShowHotlineModal(false);
+              } else {
+                alert(data.error || 'Failed to submit hotline booking.');
+              }
+            } catch (err) {
+              alert('Network error: Unable to submit hotline booking to server.');
+            }
           }}
         />
       )}
@@ -1292,7 +1575,7 @@ function CustomerPortal({
                       {['COMPLETED', 'REPORT_ISSUED', 'CLOSED'].includes(job.status) ? (
                         <div className="flex flex-col gap-1.5 w-full">
                           <button
-                            onClick={() => window.open(`${API_BASE}/jobs/${job.id}/pdf-report`, '_blank')}
+                            onClick={() => openPrintableReport(job.id)}
                             className="w-full bg-[#0286cd] hover:bg-[#026fa8] text-white font-extrabold py-2 px-3 rounded-xl text-xs flex items-center justify-center gap-1.5 transition-all shadow cursor-pointer"
                           >
                             <FileText className="w-3.5 h-3.5 text-white" />
@@ -1724,26 +2007,38 @@ function TechnicianProfileModal({ currentUser, onUpdateUser, onClose, handleLogo
   const [avatar, setAvatar] = useState(currentUser?.avatar || 'https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&w=150&q=80');
   const [password, setPassword] = useState('');
   const [savedSuccess, setSavedSuccess] = useState(false);
+  const [profileError, setProfileError] = useState('');
 
-  const handleSaveProfile = (e) => {
+  const handleSaveProfile = async (e) => {
     e.preventDefault();
-    const updated = {
-      ...currentUser,
-      name,
-      phone,
-      email,
-      depot,
-      avatar,
-      ...(password ? { password } : {})
-    };
-    if (onUpdateUser) {
-      onUpdateUser(updated);
+    setProfileError('');
+    try {
+      const techId = currentUser?.techId || currentUser?.id;
+      const res = await fetch(`${API_BASE}/technicians/${techId}/profile`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name, phone, password: password || undefined })
+      });
+      const data = await res.json();
+      if (res.ok) {
+        const updated = {
+          ...currentUser,
+          name,
+          phone,
+          avatar
+        };
+        if (onUpdateUser) onUpdateUser(updated);
+        setSavedSuccess(true);
+        setTimeout(() => {
+          setSavedSuccess(false);
+          onClose();
+        }, 1200);
+      } else {
+        setProfileError(data.error || 'Failed to update technician profile.');
+      }
+    } catch (err) {
+      setProfileError('Network error: Unable to reach server.');
     }
-    setSavedSuccess(true);
-    setTimeout(() => {
-      setSavedSuccess(false);
-      onClose();
-    }, 1200);
   };
 
   const handlePhotoUpload = (e) => {
@@ -1925,15 +2220,21 @@ function TechnicianApp({ jobs, setJobs, currentUser, setCurrentUser, handleLogou
   });
 
   const handleStatusUpdate = async (jobId, newStatus) => {
-    setJobs(jobs.map(j => j.id === jobId ? { ...j, status: newStatus } : j));
+    // The screen only changes after the server has saved the new status
     try {
-      await fetch(`${API_BASE}/jobs/${jobId}/status`, {
+      const res = await fetch(`${API_BASE}/jobs/${jobId}/status`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ status: newStatus })
       });
+      const data = await res.json();
+      if (!res.ok) {
+        alert(data.error || 'The status could not be updated.');
+        return;
+      }
+      setJobs(prev => prev.map(j => j.id === jobId ? data : j));
     } catch (e) {
-      console.warn('Backend sync warning:', e);
+      alert('Network error: Unable to reach the server. The status was not changed.');
     }
   };
 
@@ -2412,7 +2713,7 @@ function TechnicianApp({ jobs, setJobs, currentUser, setCurrentUser, handleLogou
 
                   <div className="flex items-center gap-2 shrink-0 pt-2 sm:pt-0 border-t sm:border-t-0 border-slate-100 justify-end">
                     <button
-                      onClick={() => window.open(`${API_BASE}/jobs/${job.id}/pdf-report`, '_blank')}
+                      onClick={() => openPrintableReport(job.id)}
                       className="h-8 bg-[#0286cd] hover:bg-[#026fa8] text-white font-extrabold px-3.5 rounded-xl text-xs inline-flex items-center gap-1.5 transition-all shadow-sm cursor-pointer"
                     >
                       <FileText className="w-3.5 h-3.5" /> View
@@ -2478,9 +2779,17 @@ function AdminOperationsHub({ jobs, setJobs, config, customers, setCustomers, se
         body: JSON.stringify({ technicianName: techName, status: newStatus || 'TECH_ASSIGNED' })
       });
       const updated = await res.json();
-      setJobs(jobs.map(j => j.id === jobId ? updated : j));
+      if (!res.ok) {
+        alert(updated.error || 'The technician could not be assigned.');
+        return;
+      }
+      setJobs(prev => prev.map(j => j.id === jobId ? updated : j));
+      // The server also updated the technician's status, so reload the roster
+      const techRes = await fetch(`${API_BASE}/technicians`);
+      if (techRes.ok) setTechnicians(await techRes.json());
     } catch (e) {
-      setJobs(jobs.map(j => j.id === jobId ? { ...j, technicianName: techName, status: newStatus || 'TECH_ASSIGNED' } : j));
+      alert('Network error: Unable to reach the server. The technician was not assigned.');
+      return;
     }
     setSelectedJobForDispatch(null);
   };
@@ -2946,11 +3255,19 @@ function AdminOperationsHub({ jobs, setJobs, config, customers, setCustomers, se
                 body: JSON.stringify(newCustData)
               });
               const saved = await res.json();
-              setCustomers([...customers, saved]);
+              if (res.ok && saved.id) {
+                const { tempPassword, loginEmail, ...customer } = saved;
+                setCustomers([...customers, customer]);
+                setShowAddCustomerModal(false);
+                if (tempPassword) {
+                  alert(`Customer created.\n\nLogin email: ${loginEmail}\nTemporary password: ${tempPassword}\n\nGive these to the customer. The password is shown only once.`);
+                }
+              } else {
+                alert(saved.error || 'Failed to add customer. Please check the details.');
+              }
             } catch (e) {
-              setCustomers([...customers, { id: `cust-${Date.now()}`, ...newCustData, pointsBalance: 0, calloutsUsed: 0 }]);
+              alert('Network error: Unable to reach server to create customer.');
             }
-            setShowAddCustomerModal(false);
           }}
         />
       )}
@@ -2967,11 +3284,19 @@ function AdminOperationsHub({ jobs, setJobs, config, customers, setCustomers, se
                 body: JSON.stringify(newTechData)
               });
               const saved = await res.json();
-              setTechnicians([...technicians, saved]);
+              if (res.ok && saved.id) {
+                const { tempPassword, ...tech } = saved;
+                setTechnicians([...technicians, tech]);
+                setShowAddTechModal(false);
+                if (tempPassword) {
+                  alert(`Technician created.\n\nLogin email: ${tech.email}\nTemporary password: ${tempPassword}\n\nGive these to the technician. The password is shown only once.`);
+                }
+              } else {
+                alert(saved.error || 'Failed to add technician. Please check phone and details.');
+              }
             } catch (e) {
-              setTechnicians([...technicians, { id: `tech-${Date.now()}`, ...newTechData, rating: 5.0 }]);
+              alert('Network error: Unable to reach server to register technician.');
             }
-            setShowAddTechModal(false);
           }}
         />
       )}
@@ -3008,9 +3333,23 @@ function AdminOperationsHub({ jobs, setJobs, config, customers, setCustomers, se
         <EditTechnicianModal
           tech={editingTech}
           onClose={() => setEditingTech(null)}
-          onSave={(updatedTech) => {
-            setTechnicians(technicians.map(t => t.id === updatedTech.id ? updatedTech : t));
-            setEditingTech(null);
+          onSave={async (updatedTech) => {
+            try {
+              const res = await fetch(`${API_BASE}/technicians/${updatedTech.id}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(updatedTech)
+              });
+              const saved = await res.json();
+              if (res.ok && saved.id) {
+                setTechnicians(technicians.map(t => t.id === saved.id ? saved : t));
+                setEditingTech(null);
+              } else {
+                alert(saved.error || 'Failed to update technician.');
+              }
+            } catch (e) {
+              alert('Network error: Unable to reach server to save technician changes.');
+            }
           }}
         />
       )}
@@ -3160,16 +3499,23 @@ function DynamicConfigStudio({ config, setConfig }) {
       toiletOverflowDisclaimer: disclaimerText 
     };
 
-    setConfig(updatedConfig);
     try {
-      await fetch(`${API_BASE}/config`, {
+      const res = await fetch(`${API_BASE}/config`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(updatedConfig)
       });
-    } catch (e) {}
-    setSavedSuccess(true);
-    setTimeout(() => setSavedSuccess(false), 3000);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        alert(data.error || 'The configuration was not saved.');
+        return;
+      }
+      setConfig(updatedConfig);
+      setSavedSuccess(true);
+      setTimeout(() => setSavedSuccess(false), 3000);
+    } catch (e) {
+      alert('Network error: Unable to reach the server. The configuration was not saved.');
+    }
   };
 
   return (
@@ -3322,8 +3668,17 @@ function CompanyRegistrationModal({ onClose, onRegisterSuccess, isAdminMode = fa
   const [cardExpiry, setCardExpiry] = useState('12/28');
   const [cardCvc, setCardCvc] = useState('');
 
-  // System Admin Credentials State
-  const [adminPassword, setAdminPassword] = useState('Password123!');
+  // Login password. Public sign-up: the customer chooses it. Admin mode: a random temporary password the admin passes on.
+  const [adminPassword, setAdminPassword] = useState(() => {
+    if (!isAdminMode) return '';
+    const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnpqrstuvwxyz23456789';
+    let out = '';
+    const rnd = new Uint32Array(10);
+    window.crypto.getRandomValues(rnd);
+    rnd.forEach(n => { out += chars[n % chars.length]; });
+    return `${out}!7`;
+  });
+  const [confirmPassword, setConfirmPassword] = useState('');
   
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState('');
@@ -3367,6 +3722,16 @@ function CompanyRegistrationModal({ onClose, onRegisterSuccess, isAdminMode = fa
       setSubmitError('Validation Error: Please enter a valid business email address.');
       return false;
     }
+    if (!isAdminMode) {
+      if (!adminPassword || adminPassword.length < 8) {
+        setSubmitError('Validation Error: Password must be at least 8 characters.');
+        return false;
+      }
+      if (adminPassword !== confirmPassword) {
+        setSubmitError('Validation Error: The two passwords do not match.');
+        return false;
+      }
+    }
     if (!validateAdelaideLocation()) return false;
     return true;
   };
@@ -3405,7 +3770,7 @@ function CompanyRegistrationModal({ onClose, onRegisterSuccess, isAdminMode = fa
       primaryContactName,
       phoneNumber,
       email,
-      password: adminPassword || 'Password123!',
+      password: adminPassword,
       membershipPlan: selectedPlan,
       paymentType,
       paymentDetails: paymentType === 'CREDIT_CARD' ? { cardNumber, cardExpiry, cardCvc } : { bsb, accountNumber, accountName },
@@ -3430,34 +3795,8 @@ function CompanyRegistrationModal({ onClose, onRegisterSuccess, isAdminMode = fa
       }
     } catch (err) {
       setSubmitting(false);
-      // Fallback in-memory registration if backend API is offline
-      const mockCustomer = {
-        id: `cust-${Date.now()}`,
-        businessName,
-        abn: abn || '48 123 456 789',
-        primaryContactName,
-        phoneNumber,
-        email,
-        membershipPlan: selectedPlan,
-        paymentMethod: paymentType === 'CREDIT_CARD' ? 'Visa / MasterCard (•••• 4242)' : 'PayTo Bank Direct',
-        paymentType,
-        subscriptionStatus: 'ACTIVE',
-        consecutiveMonths: 1,
-        pointsBalance: 100,
-        calloutsUsed: 0,
-        locations: [
-          {
-            id: `loc-${Date.now()}`,
-            name: locationName,
-            address: fullAddressString,
-            contactName: primaryContactName,
-            contactPhone: phoneNumber,
-            accessInstructions: 'Main Reception Keypad',
-            securityNotes: 'Adelaide SA Site'
-          }
-        ]
-      };
-      onRegisterSuccess(mockCustomer, payload);
+      // No offline fake: the company only exists once the server has saved it
+      setSubmitError('Cannot reach the server. Your registration was not saved. Please try again.');
     }
   };
 
@@ -3567,6 +3906,33 @@ function CompanyRegistrationModal({ onClose, onRegisterSuccess, isAdminMode = fa
                   className="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-slate-900 font-medium focus:border-[#0286cd] focus:outline-none"
                 />
               </div>
+
+              {!isAdminMode && (
+                <>
+                  <div>
+                    <label className="block text-slate-700 font-bold mb-1">Login Password * (at least 8 characters)</label>
+                    <input
+                      type="password"
+                      required
+                      value={adminPassword}
+                      onChange={(e) => setAdminPassword(e.target.value)}
+                      autoComplete="new-password"
+                      className="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-slate-900 font-medium focus:border-[#0286cd] focus:outline-none"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-slate-700 font-bold mb-1">Confirm Password *</label>
+                    <input
+                      type="password"
+                      required
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      autoComplete="new-password"
+                      className="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-slate-900 font-medium focus:border-[#0286cd] focus:outline-none"
+                    />
+                  </div>
+                </>
+              )}
             </div>
 
             {/* ADELAIDE LOCATION SELECTION */}
@@ -3990,14 +4356,35 @@ function CompanyRegistrationModal({ onClose, onRegisterSuccess, isAdminMode = fa
 /* =========================================================================
    MODAL: COMPANY PROFILE & PASSWORD UPDATE
    ========================================================================= */
-function CompanyProfileModal({ account, onClose, onUpdateSuccess }) {
+function CompanyProfileModal({ account, onClose, onUpdateSuccess, onSitesChanged, handleLogout }) {
   const [businessName, setBusinessName] = useState(account.businessName || '');
   const [primaryContactName, setPrimaryContactName] = useState(account.primaryContactName || account.primaryContact || '');
   const [phoneNumber, setPhoneNumber] = useState(account.phoneNumber || account.phone || '');
   const [email, setEmail] = useState(account.email || '');
   const [newPassword, setNewPassword] = useState('');
   const [saving, setSaving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
   const [msg, setMsg] = useState('');
+
+  const handleDeleteAccount = async () => {
+    if (!window.confirm("WARNING: Are you sure you want to permanently delete your account and all associated data? This action cannot be undone and complies with Apple App Store review guidelines.")) return;
+    setDeleting(true);
+    setMsg('');
+    try {
+      const res = await fetch(`${API_BASE}/customers/${account.id}`, { method: 'DELETE' });
+      if (res.ok) {
+        alert("Account deleted successfully.");
+        if (handleLogout) handleLogout();
+      } else {
+        const data = await res.json();
+        setMsg(data.error || 'Failed to delete account.');
+        setDeleting(false);
+      }
+    } catch (err) {
+      setMsg("Network error occurred while trying to delete the account.");
+      setDeleting(false);
+    }
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -4019,20 +4406,13 @@ function CompanyProfileModal({ account, onClose, onUpdateSuccess }) {
       }
     } catch (err) {
       setSaving(false);
-      // Fallback
-      onUpdateSuccess({
-        ...account,
-        businessName,
-        primaryContactName,
-        phoneNumber,
-        email
-      });
+      setMsg('Network error: Unable to update profile on server.');
     }
   };
 
   return (
     <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4">
-      <div className="bg-white max-w-lg w-full p-6 rounded-3xl space-y-5 border border-slate-200 shadow-2xl text-xs text-slate-800">
+      <div className="bg-white max-w-lg w-full p-6 rounded-3xl space-y-5 border border-slate-200 shadow-2xl text-xs text-slate-800 max-h-[92vh] overflow-y-auto custom-scroll-container">
         <div className="flex items-center justify-between border-b border-slate-200 pb-3">
           <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
             <User className="w-5 h-5 text-[#0286cd]" />
@@ -4070,14 +4450,137 @@ function CompanyProfileModal({ account, onClose, onUpdateSuccess }) {
             <input type="password" placeholder="Leave blank to keep current password" value={newPassword} onChange={e => setNewPassword(e.target.value)} className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-slate-900 font-medium" />
           </div>
 
-          <div className="pt-3 flex justify-end gap-2">
-            <button type="button" onClick={onClose} className="px-4 py-2 rounded-xl border border-slate-300 font-bold text-slate-600 hover:bg-slate-50 cursor-pointer">Cancel</button>
-            <button type="submit" disabled={saving} className="px-6 py-2.5 rounded-xl bg-[#0286cd] hover:bg-[#026fa8] text-white font-extrabold cursor-pointer shadow-md">
-              {saving ? 'Saving...' : 'Save Profile Changes'}
+          <div className="pt-3 flex justify-between gap-2 border-t border-slate-200 mt-4">
+            <button type="button" onClick={handleDeleteAccount} disabled={deleting} className="px-4 py-2 rounded-xl bg-red-100 hover:bg-red-200 text-red-700 font-bold cursor-pointer transition-colors flex items-center gap-2">
+              <Trash2 className="w-4 h-4" /> {deleting ? 'Deleting...' : 'Delete Account'}
+            </button>
+            <div className="flex gap-2">
+              <button type="button" onClick={onClose} className="px-4 py-2 rounded-xl border border-slate-300 font-bold text-slate-600 hover:bg-slate-50 cursor-pointer">Cancel</button>
+              <button type="submit" disabled={saving || deleting} className="px-6 py-2.5 rounded-xl bg-[#0286cd] hover:bg-[#026fa8] text-white font-extrabold cursor-pointer shadow-md">
+                {saving ? 'Saving...' : 'Save Profile Changes'}
+              </button>
+            </div>
+          </div>
+        </form>
+
+        <ManageSitesSection account={account} onSitesChanged={onSitesChanged} />
+      </div>
+    </div>
+  );
+}
+
+/* =========================================================================
+   MULTI-SITE MANAGEMENT: list, add and edit a company's sites (saved to the Location table)
+   ========================================================================= */
+function ManageSitesSection({ account, onSitesChanged }) {
+  const emptySite = { name: '', address: '', contactName: '', contactPhone: '', accessInstructions: '', securityNotes: '' };
+  const [sites, setSites] = useState(account.locations || []);
+  const [editingId, setEditingId] = useState(null); // null = closed, 'new' = add form, otherwise a location id
+  const [form, setForm] = useState(emptySite);
+  const [busy, setBusy] = useState(false);
+  const [siteMsg, setSiteMsg] = useState('');
+
+  const openForm = (site) => {
+    setSiteMsg('');
+    setEditingId(site ? site.id : 'new');
+    setForm(site ? {
+      name: site.name || '', address: site.address || '', contactName: site.contactName || '',
+      contactPhone: site.contactPhone || '', accessInstructions: site.accessInstructions || '', securityNotes: site.securityNotes || ''
+    } : emptySite);
+  };
+
+  const saveSite = async (e) => {
+    e.preventDefault();
+    setBusy(true);
+    setSiteMsg('');
+    try {
+      const isNew = editingId === 'new';
+      const res = await fetch(isNew ? `${API_BASE}/customers/${account.id}/locations` : `${API_BASE}/locations/${editingId}`, {
+        method: isNew ? 'POST' : 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(form)
+      });
+      const data = await res.json();
+      setBusy(false);
+      if (!res.ok) {
+        setSiteMsg(data.error || 'The site could not be saved.');
+        return;
+      }
+      const nextSites = isNew ? [...sites, data] : sites.map(s => s.id === data.id ? data : s);
+      setSites(nextSites);
+      setEditingId(null);
+      if (onSitesChanged) onSitesChanged({ ...account, locations: nextSites });
+    } catch (err) {
+      setBusy(false);
+      setSiteMsg('Network error: Unable to reach the server. The site was not saved.');
+    }
+  };
+
+  const field = (key, label, required = false) => (
+    <div>
+      <label className="block text-slate-700 font-bold mb-1">{label}{required ? ' *' : ''}</label>
+      <input
+        type="text"
+        required={required}
+        value={form[key]}
+        onChange={e => setForm({ ...form, [key]: e.target.value })}
+        className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-slate-900 font-medium"
+      />
+    </div>
+  );
+
+  return (
+    <div className="pt-4 border-t border-slate-200 space-y-3">
+      <div className="flex items-center justify-between">
+        <h4 className="font-bold text-slate-900 text-sm flex items-center gap-1.5">
+          <MapPin className="w-4 h-4 text-[#0286cd]" /> Service Sites ({sites.length})
+        </h4>
+        {editingId === null && (
+          <button type="button" onClick={() => openForm(null)} className="px-3 py-1.5 rounded-xl bg-[#0286cd] hover:bg-[#026fa8] text-white font-bold cursor-pointer flex items-center gap-1">
+            <Plus className="w-3.5 h-3.5" /> Add Site
+          </button>
+        )}
+      </div>
+
+      {siteMsg && <div className="p-3 bg-red-50 text-red-700 rounded-xl font-medium">{siteMsg}</div>}
+
+      {editingId === null && (
+        <div className="space-y-2">
+          {sites.map(site => (
+            <div key={site.id} className="p-3 rounded-xl border border-slate-200 bg-slate-50 flex items-start justify-between gap-2">
+              <div className="min-w-0">
+                <div className="font-bold text-slate-900">{site.name}</div>
+                <div className="text-slate-600">{site.address}</div>
+                <div className="text-[11px] text-slate-500">Contact: {site.contactName} ({site.contactPhone})</div>
+              </div>
+              <button type="button" onClick={() => openForm(site)} className="shrink-0 px-2.5 py-1 rounded-lg border border-slate-300 text-slate-700 font-bold hover:bg-white cursor-pointer flex items-center gap-1">
+                <Edit3 className="w-3.5 h-3.5" /> Edit
+              </button>
+            </div>
+          ))}
+          {sites.length === 0 && <p className="text-slate-500">No sites yet.</p>}
+        </div>
+      )}
+
+      {editingId !== null && (
+        <form onSubmit={saveSite} className="space-y-3 p-3 rounded-xl border border-blue-200 bg-blue-50/40">
+          <div className="font-bold text-slate-900">{editingId === 'new' ? 'Add a new site' : 'Edit site'}</div>
+          {field('name', 'Site Name', true)}
+          {field('address', 'Street Address (Adelaide, SA)', true)}
+          <div className="grid grid-cols-2 gap-3">
+            {field('contactName', 'Site Contact')}
+            {field('contactPhone', 'Contact Phone')}
+          </div>
+          {field('accessInstructions', 'Access Instructions')}
+          {field('securityNotes', 'Security / Hazard Notes')}
+          <div className="flex justify-end gap-2">
+            <button type="button" onClick={() => setEditingId(null)} className="px-4 py-2 rounded-xl border border-slate-300 font-bold text-slate-600 hover:bg-slate-50 cursor-pointer">Cancel</button>
+            <button type="submit" disabled={busy} className="px-5 py-2 rounded-xl bg-[#0286cd] hover:bg-[#026fa8] text-white font-extrabold cursor-pointer">
+              {busy ? 'Saving...' : 'Save Site'}
             </button>
           </div>
         </form>
-      </div>
+      )}
     </div>
   );
 }
@@ -4383,14 +4886,28 @@ function AssignDispatchModal({ job, technicians, onClose, onAssign }) {
 /* =========================================================================
    HOTLINE BOOKING MODAL
    ========================================================================= */
-function HotlineBookingModal({ account, config, onClose, onSubmit }) {
-  const [callerName, setCallerName] = useState('');
-  const [callerPhone, setCallerPhone] = useState('');
+function HotlineBookingModal({ account, customerAccounts = [], config, onClose, onSubmit }) {
+  const [selectedOrgId, setSelectedOrgId] = useState(account?.id || (customerAccounts[0]?.id || ''));
+  const selectedOrg = customerAccounts.find(c => c.id === selectedOrgId) || account;
+  const [callerName, setCallerName] = useState(account?.primaryContactName || '');
+  const [callerPhone, setCallerPhone] = useState(account?.phoneNumber || '');
   const [category, setCategory] = useState('Toilet overflow');
-  const [address, setAddress] = useState('');
+  const [address, setAddress] = useState(selectedOrg?.locations?.[0]?.address || 'Adelaide CBD SA 5000');
   const [description, setDescription] = useState('');
 
   const [hotlineError, setHotlineError] = useState('');
+
+  const handleOrgChange = (newOrgId) => {
+    setSelectedOrgId(newOrgId);
+    const org = customerAccounts.find(c => c.id === newOrgId);
+    if (org) {
+      setCallerName(org.primaryContactName || '');
+      setCallerPhone(org.phoneNumber || '');
+      if (org.locations && org.locations.length > 0) {
+        setAddress(org.locations[0].address);
+      }
+    }
+  };
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -4414,11 +4931,13 @@ function HotlineBookingModal({ account, config, onClose, onSubmit }) {
       return;
     }
 
+    const locId = selectedOrg?.locations?.[0]?.id || null;
+
     onSubmit({
-      organizationId: account?.id || 'cust-1',
-      locationId: 'loc-1',
-      customerName: account?.businessName || 'Hotline Phone Caller',
-      locationName: 'Hotline Site Request',
+      organizationId: selectedOrgId || selectedOrg?.id,
+      locationId: locId,
+      customerName: selectedOrg?.businessName || 'Hotline Phone Caller',
+      locationName: selectedOrg?.locations?.[0]?.name || 'Hotline Site Request',
       address: address || 'Adelaide CBD SA 5000',
       category,
       description: `[HOTLINE ORDER] Caller: ${callerName} (${callerPhone}) • ${description}`,
@@ -4447,6 +4966,23 @@ function HotlineBookingModal({ account, config, onClose, onSubmit }) {
               <span>{hotlineError}</span>
             </div>
           )}
+          {customerAccounts && customerAccounts.length > 0 && (
+            <div>
+              <label className="block text-slate-700 font-bold mb-1">Select Customer Business</label>
+              <select
+                value={selectedOrgId}
+                onChange={e => handleOrgChange(e.target.value)}
+                className="w-full bg-slate-50 border border-slate-300 rounded-xl p-2.5 text-slate-900 font-medium"
+              >
+                {customerAccounts.map(c => (
+                  <option key={c.id} value={c.id}>
+                    {c.businessName} ({c.membershipPlan.toUpperCase()} - {c.calloutsUsed || 0} callouts used)
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
+
           <div className="grid grid-cols-2 gap-2">
             <div>
               <label className="block text-slate-700 font-bold mb-1">Caller Name</label>
@@ -5438,13 +5974,18 @@ function EditEmergencyRequestModal({ job, account, config, onClose, onSave }) {
    LOGIN PORTAL COMPONENT (CLEAN SINGLE-CARD AUTO-ROLE AUTHENTICATION)
    ========================================================================= */
 function LoginPortal({ onLogin, dbStatus, customerAccounts, onOpenRegister }) {
-  const [email, setEmail] = useState('mahima@mahimaenterprises.com.au');
-  const [password, setPassword] = useState('••••••••');
+  // Demo shortcuts exist only in `npm run dev`. A production build never shows or prefills credentials.
+  const [email, setEmail] = useState('');
+  const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
+  const [errorMsg, setErrorMsg] = useState('');
+  const [selectedDemoRole, setSelectedDemoRole] = useState(null);
+  const [showDevBar, setShowDevBar] = useState(IS_DEV);
 
   const handleFormSubmit = async (e) => {
     e.preventDefault();
     setLoading(true);
+    setErrorMsg('');
     try {
       const res = await fetch(`${API_BASE}/auth/login`, {
         method: 'POST',
@@ -5453,71 +5994,33 @@ function LoginPortal({ onLogin, dbStatus, customerAccounts, onOpenRegister }) {
       });
       const data = await res.json();
       setLoading(false);
-      if (data.user) {
-        onLogin(data.user);
+      if (res.ok && data.user) {
+        onLogin(data.user, data.accessToken, data.refreshToken);
+      } else {
+        setErrorMsg(data.error || 'Invalid credentials.');
       }
     } catch (err) {
       setLoading(false);
-      // Client-side fallback if backend is offline
-      const input = (email || '').toLowerCase();
-      let fallbackUser;
-      if (input.includes('dave') || input.includes('tech')) {
-        fallbackUser = {
-          id: 'usr-tech-1',
-          name: 'Dave Miller',
-          email: email || 'dave.m@sacommercialcleaning.com.au',
-          role: 'technician',
-          techId: 'tech-1',
-          status: 'ON_SITE',
-          avatar: 'https://images.unsplash.com/photo-1560250097-0b93528c311a?auto=format&fit=crop&w=150&q=80'
-        };
-      } else if (input.includes('david') || input.includes('tower')) {
-        fallbackUser = {
-          id: 'usr-cust-2',
-          name: 'David Ross',
-          email: email || 'dross@adelaidetower.com.au',
-          role: 'customer',
-          businessId: 'cust-2',
-          businessName: 'Adelaide Corporate Tower Management',
-          avatar: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?auto=format&fit=crop&w=150&q=80'
-        };
-      } else if (input.includes('mahima') || input.includes('enterprises')) {
-        fallbackUser = {
-          id: 'usr-cust-1',
-          name: 'Mahima Sharma',
-          email: email || 'mahima@mahimaenterprises.com.au',
-          role: 'customer',
-          businessId: 'cust-1',
-          businessName: 'Mahima Commercial Enterprises Pty Ltd',
-          avatar: 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=150&q=80'
-        };
-      } else {
-        fallbackUser = {
-          id: 'usr-admin-1',
-          name: 'Sarah Connor',
-          email: email || 'admin@sacommercialcleaning.com.au',
-          role: 'admin',
-          title: 'Operations Director & Dispatch Master',
-          avatar: 'https://images.unsplash.com/photo-1580489944761-15a19d654956?auto=format&fit=crop&w=150&q=80'
-        };
-      }
-      onLogin(fallbackUser);
+      // No offline or mock login: the server must confirm the email and password against the database
+      setErrorMsg('Cannot reach the server. Check that the API is running and try again.');
     }
   };
 
   return (
     <div className="min-h-screen text-slate-800 flex flex-col justify-between p-4 lg:p-8 login-card-gradient">
-      {/* Top Header */}
-      <header className="max-w-4xl w-full mx-auto flex items-center justify-between py-4">
+      {/* Top Header - Aligned with the max-w-md login panel */}
+      <header className="max-w-md w-full mx-auto py-4">
         <div className="flex items-center gap-3">
-          <div className="bg-[#e4e4e4] p-2 rounded-xl shadow-sm border border-slate-300 flex items-center justify-center">
+          <div className="bg-[#e4e4e4] p-2 rounded-xl shadow-sm border border-slate-300 flex items-center justify-center shrink-0">
             <img src="/logo.webp" alt="SA Commercial Cleaning Logo" className="h-9 w-auto object-contain" />
           </div>
           <div>
-            <h1 className="text-lg font-black tracking-tight text-slate-900">
+            <h1 className="text-lg font-black tracking-tight text-slate-900 leading-tight">
               SA Emergency Cleaning
             </h1>
-            <p className="text-[11px] text-[#0286cd] font-semibold">Emergency Cleaning Membership Portal • South Australia</p>
+            <p className="text-[11px] text-[#0286cd] font-semibold leading-tight">
+              Emergency Cleaning Membership Portal • South Australia
+            </p>
           </div>
         </div>
       </header>
@@ -5531,6 +6034,87 @@ function LoginPortal({ onLogin, dbStatus, customerAccounts, onOpenRegister }) {
               <img src="/logo.webp" alt="SA Commercial Cleaning Services Logo" className="h-16 w-auto mx-auto object-contain" />
             </div>
           </div>
+
+          {/* Development Quick Demo Login Bar with Toggle (npm run dev only) */}
+          {IS_DEV && (
+          <div className="space-y-2">
+            <div className="flex items-center justify-between px-1">
+              <span className="text-[10px] font-extrabold uppercase text-slate-400 tracking-wider">
+                {showDevBar ? '🛠️ Dev Demo Login:' : 'Quick Login'}
+              </span>
+              <button
+                type="button"
+                onClick={() => setShowDevBar(!showDevBar)}
+                className="text-[10px] font-bold text-slate-400 hover:text-[#0286cd] transition-colors cursor-pointer flex items-center gap-1"
+                title={showDevBar ? "Hide Demo Bar (Normal User Mode)" : "Show Dev Demo Bar"}
+              >
+                <span>{showDevBar ? 'Hide Dev Bar ✕' : '🛠️ Show Demo Accounts'}</span>
+              </button>
+            </div>
+
+            {showDevBar && (
+              <div className="bg-slate-50 border border-slate-200 rounded-2xl p-2.5 text-center transition-all animate-in fade-in duration-150">
+                <div className="flex gap-2">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEmail('mahima@mahimaenterprises.com.au');
+                      setPassword('Password123!');
+                      setSelectedDemoRole('customer');
+                      setErrorMsg('');
+                    }}
+                    className={`flex-1 py-1.5 px-2 rounded-xl text-[11px] transition-all cursor-pointer border ${
+                      selectedDemoRole === 'customer'
+                        ? 'bg-[#0286cd] text-white font-extrabold shadow-sm border-[#0286cd] ring-2 ring-[#0286cd]/30'
+                        : 'bg-white hover:bg-blue-50 border-blue-200 text-[#0286cd] font-bold'
+                    }`}
+                  >
+                    Customer
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEmail('dave@sacleaning.com.au');
+                      setPassword('Password123!');
+                      setSelectedDemoRole('technician');
+                      setErrorMsg('');
+                    }}
+                    className={`flex-1 py-1.5 px-2 rounded-xl text-[11px] transition-all cursor-pointer border ${
+                      selectedDemoRole === 'technician'
+                        ? 'bg-amber-600 text-white font-extrabold shadow-sm border-amber-600 ring-2 ring-amber-500/30'
+                        : 'bg-white hover:bg-amber-50 border-amber-200 text-amber-700 font-bold'
+                    }`}
+                  >
+                    Tech
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setEmail('admin@sacleaning.com.au');
+                      setPassword('Password123!');
+                      setSelectedDemoRole('admin');
+                      setErrorMsg('');
+                    }}
+                    className={`flex-1 py-1.5 px-2 rounded-xl text-[11px] transition-all cursor-pointer border ${
+                      selectedDemoRole === 'admin'
+                        ? 'bg-purple-600 text-white font-extrabold shadow-sm border-purple-600 ring-2 ring-purple-500/30'
+                        : 'bg-white hover:bg-purple-50 border-purple-200 text-purple-700 font-bold'
+                    }`}
+                  >
+                    Admin
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+          )}
+
+          {errorMsg && (
+            <div className="p-3 bg-red-50 border border-red-200 rounded-xl text-red-700 text-xs font-semibold flex items-center gap-2">
+              <AlertCircle className="w-4 h-4 text-red-500 shrink-0" />
+              <span>{errorMsg}</span>
+            </div>
+          )}
 
           <form onSubmit={handleFormSubmit} className="space-y-4 text-xs">
             <div>
@@ -5594,8 +6178,8 @@ function LoginPortal({ onLogin, dbStatus, customerAccounts, onOpenRegister }) {
         </div>
       </main>
 
-      {/* Footer */}
-      <footer className="max-w-4xl w-full mx-auto py-4 text-center text-xs text-slate-500 border-t border-slate-200">
+      {/* Footer - Aligned with max-w-md login panel */}
+      <footer className="max-w-md w-full mx-auto py-4 text-center text-xs text-slate-500 border-t border-slate-200">
         <p>© 2026 SA Commercial Cleaning Services Pty Ltd (SACC). All rights reserved.</p>
       </footer>
     </div>
@@ -5744,7 +6328,7 @@ function AdminJobDetailsModal({ job, onClose, onDispatchClick }) {
             </div>
             <div className="flex items-center gap-2">
               <button
-                onClick={() => window.open(`${API_BASE}/jobs/${job.id}/pdf-report`, '_blank')}
+                onClick={() => openPrintableReport(job.id)}
                 className="bg-[#0286cd] hover:bg-[#026fa8] text-white font-extrabold px-3.5 py-2 rounded-xl text-xs flex items-center gap-1.5 shadow transition-all cursor-pointer"
               >
                 <FileText className="w-4 h-4 text-white" /> View PDF

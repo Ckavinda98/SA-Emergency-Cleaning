@@ -8,6 +8,22 @@ generator client {
   provider = "prisma-client-js"
 }
 
+model User {
+  id             String        @id @default(uuid())
+  email          String        @unique
+  password       String
+  name           String
+  role           String        // CUSTOMER, TECHNICIAN, ADMIN, CONFIG
+  refreshToken   String?
+  lastLoginAt    DateTime?
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  technicianId   String?       @unique
+  technician     Technician?   @relation(fields: [technicianId], references: [id], onDelete: Cascade)
+  createdAt      DateTime      @default(now())
+  updatedAt      DateTime      @updatedAt
+}
+
 model Organization {
   id                 String              @id @default(uuid())
   businessName       String
@@ -15,7 +31,6 @@ model Organization {
   primaryContactName String
   phoneNumber        String
   email              String              @unique
-  password           String              @default("Password123!")
   membershipPlan     String              @default("business")
   paymentMethod      String              @default("PayTo Bank Direct")
   paymentType        String              @default("DIRECT_DEBIT")
@@ -23,6 +38,7 @@ model Organization {
   consecutiveMonths  Int                 @default(8)
   pointsBalance      Int                 @default(1592)
   calloutsUsed       Int                 @default(1)
+  users              User[]
   locations          Location[]
   emergencyRequests  EmergencyRequest[]
   redemptionRequests RedemptionRequest[]
@@ -53,6 +69,7 @@ model Technician {
   status      String   @default("AVAILABLE") // AVAILABLE, ON_SITE, OFF_DUTY
   rating      Float    @default(4.9)
   activeJobId String?
+  user        User?
   createdAt   DateTime @default(now())
 }
 
@@ -77,7 +94,7 @@ model EmergencyRequest {
   accessInstructions String?
   accessRestrictions String?
   parkingInstructions String?
-  status             String   @default("SUBMITTED") // SUBMITTED, UNDER_REVIEW, MORE_INFO_REQUIRED, ACCEPTED, TECHNICIAN_ASSIGNED, TRAVELLING, ARRIVED, IN_PROGRESS, COMPLETED, REPORT_ISSUED, CLOSED
+  status             String   @default("NEW") // NEW, SUBMITTED, UNDER_REVIEW, MORE_INFO_REQUIRED, ACCEPTED, TECHNICIAN_ASSIGNED, TRAVELLING, ARRIVED, IN_PROGRESS, COMPLETED, REPORT_ISSUED, CLOSED
   submittedAt        DateTime @default(now())
   targetAttendanceAt DateTime?
   technicianName     String?
@@ -88,6 +105,10 @@ model EmergencyRequest {
   extensionRequested Boolean  @default(false)
   extensionApproved  Boolean  @default(false)
   additionalCharges  Float    @default(0)
+  workStartedAt      DateTime?
+  completedAt        DateTime?
+  source             String   @default("PORTAL")
+  statusEvents       JobStatusEvent[]
   createdAt          DateTime @default(now())
 }
 
@@ -123,4 +144,52 @@ model Invoice {
   dueDate        DateTime     @default(now())
   paidAt         DateTime?    @default(now())
   createdAt      DateTime     @default(now())
+}
+
+model JobStatusEvent {
+  id              String           @id @default(uuid())
+  jobId           String
+  job             EmergencyRequest @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  fromStatus      String
+  toStatus        String
+  changedByUserId String?
+  notes           String?
+  createdAt       DateTime         @default(now())
+
+  @@index([jobId, createdAt])
+}
+
+// Every data change made through the API: who did what, to which record, before/after values.
+// No foreign key to User, so the history survives account deletion.
+model AuditLog {
+  id         String   @id @default(uuid())
+  userId     String?
+  userEmail  String?
+  userRole   String?
+  action     String   // e.g. JOB_CREATED, JOB_STATUS_CHANGED, PLAN_CHANGED, REDEMPTION_APPROVED
+  entityType String   // Organization, EmergencyRequest, Technician, Location, RedemptionRequest, Invoice, SystemDynamicConfig
+  entityId   String?
+  diffJson   String?  // JSON string with before/after values
+  ipAddress  String?
+  createdAt  DateTime @default(now())
+
+  @@index([entityType, entityId])
+  @@index([createdAt])
+}
+
+// Every sign-in attempt, sign-out and rejected token refresh.
+model LoginLog {
+  id        String   @id @default(uuid())
+  userId    String?
+  email     String
+  success   Boolean
+  role      String?
+  event     String   @default("LOGIN_SUCCESS") // LOGIN_SUCCESS, LOGIN_FAILED, LOGOUT, REFRESH_FAILED
+  reason    String?  // UNKNOWN_EMAIL, WRONG_PASSWORD, MISSING_FIELDS, INVALID_TOKEN, TOKEN_NOT_CURRENT
+  ipAddress String?
+  userAgent String?
+  createdAt DateTime @default(now())
+
+  @@index([email])
+  @@index([createdAt])
 }

@@ -1,9 +1,11 @@
 import { PrismaClient } from '@prisma/client';
+import bcrypt from 'bcryptjs';
 
 const prisma = new PrismaClient();
 
 async function main() {
   console.log('Seeding SA Commercial Cleaning Database...');
+  const hashedPassword = await bcrypt.hash('Password123!', 10);
 
   // 1. Seed Dynamic System Config
   const defaultConfig = {
@@ -53,7 +55,6 @@ async function main() {
       primaryContactName: 'Mahima Sharma',
       phoneNumber: '0412 345 678',
       email: 'mahima@mahimaenterprises.com.au',
-      password: 'Password123!',
       membershipPlan: 'business',
       paymentMethod: 'PayTo Bank Direct',
       paymentType: 'DIRECT_DEBIT',
@@ -86,6 +87,18 @@ async function main() {
     }
   });
 
+  await prisma.user.upsert({
+    where: { email: 'mahima@mahimaenterprises.com.au' },
+    update: {},
+    create: {
+      email: 'mahima@mahimaenterprises.com.au',
+      password: hashedPassword,
+      name: 'Mahima Sharma',
+      role: 'CUSTOMER',
+      organizationId: 'cust-1'
+    }
+  });
+
   const cust2 = await prisma.organization.upsert({
     where: { email: 'dross@adelaidetower.com.au' },
     update: {},
@@ -96,7 +109,6 @@ async function main() {
       primaryContactName: 'David Ross',
       phoneNumber: '0418 987 654',
       email: 'dross@adelaidetower.com.au',
-      password: 'Password123!',
       membershipPlan: 'premium',
       paymentMethod: 'PayTo Bank Direct',
       paymentType: 'DIRECT_DEBIT',
@@ -120,16 +132,74 @@ async function main() {
     }
   });
 
+  await prisma.user.upsert({
+    where: { email: 'dross@adelaidetower.com.au' },
+    update: {},
+    create: {
+      email: 'dross@adelaidetower.com.au',
+      password: hashedPassword,
+      name: 'David Ross',
+      role: 'CUSTOMER',
+      organizationId: 'cust-2'
+    }
+  });
+
   // 3. Seed Technicians
   await prisma.technician.upsert({
     where: { id: 'tech-1' },
     update: {},
     create: { id: 'tech-1', name: 'Dave Miller', phone: '0488 111 222', status: 'ON_SITE', activeJobId: 'SACC-2026-0812', rating: 4.9 }
   });
+  await prisma.user.upsert({
+    where: { email: 'dave@sacleaning.com.au' },
+    update: {},
+    create: {
+      email: 'dave@sacleaning.com.au',
+      password: hashedPassword,
+      name: 'Dave Miller',
+      role: 'TECHNICIAN',
+      technicianId: 'tech-1'
+    }
+  });
+
   await prisma.technician.upsert({
     where: { id: 'tech-2' },
     update: {},
     create: { id: 'tech-2', name: 'Chris Watson', phone: '0477 333 444', status: 'AVAILABLE', activeJobId: null, rating: 5.0 }
+  });
+  await prisma.user.upsert({
+    where: { email: 'chris@sacleaning.com.au' },
+    update: {},
+    create: {
+      email: 'chris@sacleaning.com.au',
+      password: hashedPassword,
+      name: 'Chris Watson',
+      role: 'TECHNICIAN',
+      technicianId: 'tech-2'
+    }
+  });
+
+  // 3.5 Seed Admin & Config Users
+  await prisma.user.upsert({
+    where: { email: 'admin@sacleaning.com.au' },
+    update: {},
+    create: {
+      email: 'admin@sacleaning.com.au',
+      password: hashedPassword,
+      name: 'Sarah Connor',
+      role: 'ADMIN'
+    }
+  });
+
+  await prisma.user.upsert({
+    where: { email: 'config@sacleaning.com.au' },
+    update: {},
+    create: {
+      email: 'config@sacleaning.com.au',
+      password: hashedPassword,
+      name: 'Alex Vance',
+      role: 'CONFIG'
+    }
   });
 
   // 4. Seed Initial Active Job
