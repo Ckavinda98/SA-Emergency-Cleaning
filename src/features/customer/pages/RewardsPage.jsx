@@ -27,7 +27,7 @@ export function RewardsPage() {
 
   return (
     <Page title="Reward points" subtitle="Turn your membership points into free periodic cleaning"
-      breadcrumb={[{ label: 'Dashboard', to: '/app' }, { label: 'Rewards' }]}>
+      breadcrumb={[{ label: 'Dashboard', to: '/app' }, { label: 'Rewards' }]} backTo={false}>
       <div className="grid gap-4 md:grid-cols-3">
         <Kpi label="Points balance" value={`${account.pointsBalance ?? 0} pts`} icon={Award} tone="rewards" sub={pending ? `${pending} pts waiting for approval` : 'Ready to use'} />
         <Kpi label="Membership length" value={`${account.consecutiveMonths || 0} months`} icon={History} tone="slate"

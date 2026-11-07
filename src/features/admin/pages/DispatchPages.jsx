@@ -2,7 +2,7 @@
 // Replaces the dispatch tab, AdminJobDetailsModal, AssignDispatchModal and LiveTechnicianMapModal.
 import React, { useMemo, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { Radio, Search, Users, MapPin, Phone, FileText, CheckCircle2, Clock, AlertTriangle, Truck, Map as MapIcon, User, Camera, ShieldAlert } from 'lucide-react';
+import { Radio, Search, Users, MapPin, Phone, FileText, CheckCircle2, Clock, AlertTriangle, Truck, Map as MapIcon, User, Camera, ShieldAlert, ArrowLeft, RefreshCw } from 'lucide-react';
 import { useAppData } from '@/app/AppData.jsx';
 import { API_BASE } from '@/shared/config/env.js';
 import { Page, Card, Kpi, Button, Tabs, Badge, InfoRow, Field, EmptyState, inputCls, useToast, cx } from '@/shared/ui/index.jsx';
@@ -107,12 +107,19 @@ export function AdminJobPage() {
   const [tech, setTech] = useState(null);
   const [status, setStatus] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [picking, setPicking] = useState(false);
+  const [justAssigned, setJustAssigned] = useState(null);
 
   if (!job) return <Page breadcrumb={[{ label: 'Dispatch', to: '/admin/dispatch' }, { label: 'Job' }]}><Card><EmptyState title={loaded ? 'Job not found' : 'Loading…'} /></Card></Page>;
 
-  const chosenTech = tech ?? (hasTech(job) ? job.technicianName : (technicians.find(t => t.status === 'AVAILABLE') || technicians[0])?.name);
+  // Older jobs store the name with a suffix ("Dave Miller (Tech ID #104)"), so match on the technician's name.
+  const currentTech = hasTech(job) ? technicians.find(t => t.name === job.technicianName || job.technicianName.startsWith(`${t.name} (`)) : null;
+  const current = hasTech(job) ? (currentTech?.name || job.technicianName) : null;
+  const chosenTech = tech ?? (current || (technicians.find(t => t.status === 'AVAILABLE') || technicians[0])?.name);
   const chosenStatus = status ?? (!isNewJob(job.status) && ACTIVE.includes(job.status) ? job.status : 'TECH_ASSIGNED');
-  const sorted = [...technicians].sort((a, b) => (a.status === 'AVAILABLE' ? -1 : 1) - (b.status === 'AVAILABLE' ? -1 : 1));
+  const sorted = [...technicians].sort((a, b) => (a.name === current ? -2 : a.status === 'AVAILABLE' ? -1 : 1) - (b.name === current ? -2 : b.status === 'AVAILABLE' ? -1 : 1));
+  const unchanged = chosenTech === current && chosenStatus === job.status && current === job.technicianName;
+  const nextUnassigned = jobs.find(j => j.id !== job.id && isNewJob(j.status) && !hasTech(j));
 
   const assign = async () => {
     setBusy(true);
@@ -123,7 +130,11 @@ export function AdminJobPage() {
       });
       const data = await res.json();
       if (!res.ok) notify(data.error || 'The technician could not be assigned.', 'danger');
-      else { upsertJob(data); await reloadTechnicians(); notify(`${chosenTech} assigned to ${job.jobNumber}.`); }
+      else {
+        upsertJob(data); await reloadTechnicians();
+        setTech(null); setStatus(null); setPicking(false); setJustAssigned(chosenTech);
+        notify(`${chosenTech} assigned to ${job.jobNumber}.`);
+      }
     } catch { notify('Cannot reach the server. Nothing was assigned.', 'danger'); }
     setBusy(false);
   };
@@ -169,32 +180,62 @@ export function AdminJobPage() {
         </div>
 
         <div className="order-1 space-y-4 xl:order-2">
-          <Card title={hasTech(job) ? 'Reassign technician' : 'Assign technician'} icon={Users}>
-            {isFinished(job.status) ? <p className="text-sm text-slate-500">This job is finished{hasTech(job) ? ` (${job.technicianName})` : ''}.</p> : (
-              <>
-                <ul className="max-h-72 space-y-2 overflow-y-auto pr-1">
-                  {sorted.map(t => (
-                    <li key={t.id}>
-                      <button type="button" onClick={() => setTech(t.name)} className={cx('flex w-full items-center gap-2 rounded-xl border-2 p-2 text-left cursor-pointer', chosenTech === t.name ? 'border-brand bg-sky-50' : 'border-slate-200 hover:border-slate-300')}>
-                        <Avatar tech={t} />
-                        <div className="min-w-0 flex-1"><div className="truncate text-sm font-semibold text-slate-900">{t.name}</div><div className="text-xs text-slate-500">{t.phone} · ★ {t.rating || 5.0}</div></div>
-                        <TechStatusBadge status={t.status} />
-                      </button>
-                    </li>
-                  ))}
-                </ul>
-                <Field label="Status after assigning" className="mt-3">
-                  <select className={inputCls} value={chosenStatus} onChange={e => setStatus(e.target.value)}>
-                    <option value="TECH_ASSIGNED">Sent to technician (waiting for accept)</option>
-                    <option value="ACCEPTED">Accepted, on the way soon</option>
-                    <option value="IN_PROGRESS">On site, cleaning</option>
-                    <option value="MORE_INFO_REQUIRED">More info needed (pauses SLA)</option>
-                  </select>
-                </Field>
-                <Button block className="mt-3" disabled={busy || !chosenTech} onClick={assign} icon={CheckCircle2}>{busy ? 'Assigning…' : 'Assign & dispatch'}</Button>
-              </>
-            )}
-          </Card>
+          {current && !picking ? (
+            <Card title="Assigned technician" icon={Users} className={cx(justAssigned && 'ring-2 ring-emerald-400')}>
+              {justAssigned && (
+                <div className="mb-3 flex items-start gap-2 rounded-xl bg-emerald-50 p-3 text-sm text-emerald-800">
+                  <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0" />
+                  <span><b>{justAssigned}</b> has been assigned and notified.</span>
+                </div>
+              )}
+              <div className="flex items-center gap-3 rounded-xl border-2 border-emerald-300 bg-emerald-50/50 p-3">
+                <Avatar tech={currentTech || { name: current }} size="h-11 w-11" />
+                <div className="min-w-0 flex-1">
+                  <div className="break-words text-base font-bold leading-tight text-slate-900">{current}</div>
+                  <div className="text-xs text-slate-500">{currentTech?.phone}{currentTech?.rating ? ` · ★ ${currentTech.rating}` : ''}</div>
+                </div>
+                <Badge tone="success"><CheckCircle2 className="mr-1 inline h-3 w-3" />Assigned</Badge>
+              </div>
+              <div className="mt-3 flex items-center justify-between gap-2 text-sm">
+                <span className="text-slate-500">Job status</span><StatusChip status={job.status} />
+              </div>
+              <div className="mt-4 grid gap-2">
+                <Button block icon={ArrowLeft} to="/admin/dispatch">Back to dispatch list</Button>
+                {nextUnassigned && <Button block variant="secondary" to={`/admin/jobs/${nextUnassigned.id}`}>Next unassigned job ({nextUnassigned.jobNumber})</Button>}
+                {!isFinished(job.status) && <Button block variant="ghost" icon={RefreshCw} onClick={() => { setPicking(true); setJustAssigned(null); }}>Change technician or status</Button>}
+              </div>
+            </Card>
+          ) : (
+            <Card title={current ? 'Change technician' : 'Assign technician'} icon={Users}
+              actions={current && <Button size="sm" variant="ghost" onClick={() => { setPicking(false); setTech(null); setStatus(null); }}>Cancel</Button>}>
+              {isFinished(job.status) ? <p className="text-sm text-slate-500">This job is finished.</p> : (
+                <>
+                  <ul className="max-h-72 space-y-2 overflow-y-auto pr-1">
+                    {sorted.map(t => (
+                      <li key={t.id}>
+                        <button type="button" onClick={() => setTech(t.name)} className={cx('flex w-full items-center gap-2 rounded-xl border-2 p-2 text-left cursor-pointer', chosenTech === t.name ? 'border-brand bg-sky-50' : 'border-slate-200 hover:border-slate-300')}>
+                          <Avatar tech={t} />
+                          <div className="min-w-0 flex-1"><div className="truncate text-sm font-semibold text-slate-900">{t.name}</div><div className="text-xs text-slate-500">{t.phone} · ★ {t.rating || 5.0}</div></div>
+                          {t.name === current ? <Badge tone="brand">Current</Badge> : <TechStatusBadge status={t.status} />}
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                  <Field label="Status after assigning" className="mt-3">
+                    <select className={inputCls} value={chosenStatus} onChange={e => setStatus(e.target.value)}>
+                      <option value="TECH_ASSIGNED">Sent to technician (waiting for accept)</option>
+                      <option value="ACCEPTED">Accepted, on the way soon</option>
+                      <option value="IN_PROGRESS">On site, cleaning</option>
+                      <option value="MORE_INFO_REQUIRED">More info needed (pauses SLA)</option>
+                    </select>
+                  </Field>
+                  <Button block className="mt-3" disabled={busy || !chosenTech || unchanged} onClick={assign} icon={CheckCircle2}>
+                    {busy ? 'Assigning…' : unchanged ? 'No changes to save' : current ? `Reassign to ${chosenTech}` : `Assign ${chosenTech || ''} & dispatch`}
+                  </Button>
+                </>
+              )}
+            </Card>
+          )}
           <Card title="Location" icon={MapPin} bodyClassName="flex flex-col"><MapEmbed address={job.address} interactive className="h-56" /></Card>
         </div>
       </div>
@@ -211,7 +252,7 @@ export function LiveMapPage() {
   const tech = selected && technicians.find(t => t.name === selected.technicianName);
 
   return (
-    <Page fit title="Live technician map" subtitle="Technicians on active jobs" breadcrumb={[{ label: 'Dispatch', to: '/admin/dispatch' }, { label: 'Live map' }]}>
+    <Page fit title="Live technician map" subtitle="Technicians on active jobs" breadcrumb={[{ label: 'Dispatch', to: '/admin/dispatch' }, { label: 'Live map' }]} backTo={false}>
       <div className="grid gap-4 lg:grid-cols-[300px_1fr] fit:min-h-0 fit:flex-1 fit:grid-rows-[minmax(0,1fr)]">
         <Card title={`Active jobs (${liveJobs.length})`} icon={Truck} className="order-2 fit:min-h-0 lg:order-1" bodyClassName="fit:overflow-y-auto">
           {liveJobs.length === 0 ? <EmptyState title="No technicians on the road" /> : (

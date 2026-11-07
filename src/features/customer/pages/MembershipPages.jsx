@@ -41,7 +41,7 @@ export function MembershipPage() {
   useEffect(() => { if (hash) document.getElementById(hash.slice(1))?.scrollIntoView({ behavior: 'smooth' }); }, [hash]);
 
   return (
-    <Page title="Membership" subtitle="Your plan, call-outs and billing in one place" breadcrumb={[{ label: 'Dashboard', to: '/app' }, { label: 'Membership' }]}
+    <Page title="Membership" subtitle="Your plan, call-outs and billing in one place" breadcrumb={[{ label: 'Dashboard', to: '/app' }, { label: 'Membership' }]} backTo={false}
       actions={<>
         {!s.cancelled && <Button to="/app/membership/cancel" variant="ghost">Cancel membership</Button>}
         <Button to="/app/membership/change">Change plan</Button>

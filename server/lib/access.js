@@ -20,5 +20,8 @@ export const isOwnTechnician = (actor, techId) => actor.role === 'ADMIN' || acto
 export async function isJobAssignedToTechnician(actor, job) {
   if (!actor.technicianId) return false;
   const tech = await prisma.technician.findUnique({ where: { id: actor.technicianId } });
-  return Boolean(tech && job.technicianName && job.technicianName.toLowerCase() === tech.name.toLowerCase());
+  if (!tech || !job.technicianName) return false;
+  // Older jobs store the name with a suffix, e.g. "Dave Miller (Tech ID #104)".
+  const assigned = job.technicianName.toLowerCase(), name = tech.name.toLowerCase();
+  return assigned === name || assigned.startsWith(`${name} (`);
 }

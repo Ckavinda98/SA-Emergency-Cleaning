@@ -2,7 +2,7 @@
 // Colours and sizes come from the design tokens in src/index.css (see --color-brand etc.).
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { CheckCircle2, AlertCircle, Info, X, ChevronRight, Inbox } from 'lucide-react';
+import { CheckCircle2, AlertCircle, Info, X, ChevronRight, Inbox, ArrowLeft } from 'lucide-react';
 
 export const cx = (...parts) => parts.filter(Boolean).join(' ');
 
@@ -11,8 +11,13 @@ export const cx = (...parts) => parts.filter(Boolean).join(' ');
 // Page: standard page frame with breadcrumb, title and actions.
 // fit: on desktop screens (≥1280 wide and ≥700 tall) the page fills the screen exactly and
 // only the parts marked with `flex-1 min-h-0` scroll inside themselves. Smaller screens scroll normally.
-export function Page({ title, subtitle, breadcrumb, actions, children, fit = false, width = 'full', className }) {
+// A page opened from a list gets a back arrow to that list. By default it points at the
+// nearest breadcrumb link above the current page; pass backTo to override, or backTo={false} to hide it.
+export function Page({ title, subtitle, breadcrumb, actions, children, fit = false, width = 'full', className, backTo }) {
   const max = width === 'narrow' ? 'max-w-3xl' : width === 'medium' ? 'max-w-5xl' : 'max-w-[1600px]';
+  const parent = backTo === false ? null
+    : backTo ? { to: backTo, label: 'Back' }
+    : [...(breadcrumb || [])].slice(0, -1).reverse().find(b => b.to);
   return (
     <div className={cx('mx-auto w-full px-4 py-4 md:px-6 md:py-5 xl:px-8', max, fit && 'fit:h-full fit:flex fit:flex-col', className)}>
       {(title || breadcrumb || actions) && (
@@ -28,8 +33,18 @@ export function Page({ title, subtitle, breadcrumb, actions, children, fit = fal
                 ))}
               </nav>
             )}
-            {title && <h1 className="text-xl font-extrabold tracking-tight text-slate-900 md:text-2xl">{title}</h1>}
-            {subtitle && <p className="mt-0.5 text-sm text-slate-500">{subtitle}</p>}
+            {title && (
+              <div className="flex items-start gap-2">
+                {parent && (
+                  <Link to={parent.to} aria-label={`Back to ${parent.label}`} title={`Back to ${parent.label}`}
+                    className="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-slate-200 bg-white text-slate-600 shadow-sm hover:border-brand hover:text-brand md:mt-0">
+                    <ArrowLeft className="h-4 w-4" />
+                  </Link>
+                )}
+                <h1 className="min-w-0 text-xl font-extrabold tracking-tight text-slate-900 md:text-2xl">{title}</h1>
+              </div>
+            )}
+            {subtitle && <p className={cx("mt-0.5 text-sm text-slate-500", parent && title && "pl-10")}>{subtitle}</p>}
           </div>
           {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
         </div>
@@ -228,7 +243,7 @@ export function ToastProvider({ children }) {
   return (
     <ToastContext.Provider value={{ notify }}>
       {children}
-      <div className="pointer-events-none fixed inset-x-0 bottom-20 z-[200] flex flex-col items-center gap-2 px-4 md:bottom-6 md:items-end md:px-6" aria-live="polite">
+      <div className="pointer-events-none fixed inset-x-0 top-[68px] z-[200] flex flex-col items-center gap-2 px-4 md:top-auto md:bottom-6 md:items-end md:px-6" aria-live="polite">
         {toasts.map(t => (
           <div key={t.id} className={cx('pointer-events-auto flex w-full max-w-sm items-start gap-2 rounded-xl border bg-white p-3 text-sm shadow-lg',
             t.tone === 'danger' ? 'border-red-200' : t.tone === 'warning' ? 'border-amber-200' : 'border-emerald-200')}>

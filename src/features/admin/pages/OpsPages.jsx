@@ -222,7 +222,7 @@ export function HotlinePage() {
   };
 
   return (
-    <Page title="Hotline phone booking" subtitle="Log an emergency while the customer is on the phone" breadcrumb={[{ label: 'Dispatch', to: '/admin/dispatch' }, { label: 'Hotline booking' }]}>
+    <Page title="Hotline phone booking" subtitle="Log an emergency while the customer is on the phone" breadcrumb={[{ label: 'Dispatch', to: '/admin/dispatch' }, { label: 'Hotline booking' }]} backTo={false}>
       <form onSubmit={submit} className="grid gap-4 xl:grid-cols-[1fr_320px]">
         <div className="space-y-4">
           <Alert>{error}</Alert>

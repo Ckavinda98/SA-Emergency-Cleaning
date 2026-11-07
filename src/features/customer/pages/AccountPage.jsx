@@ -20,7 +20,7 @@ export function AccountPage() {
   if (!current) return <Navigate to="/app/account/profile" replace />;
 
   return (
-    <Page title="Account" subtitle={account.businessName} breadcrumb={[{ label: 'Dashboard', to: '/app' }, { label: 'Account' }, { label: current.label }]}>
+    <Page title="Account" subtitle={account.businessName} breadcrumb={[{ label: 'Dashboard', to: '/app' }, { label: 'Account' }, { label: current.label }]} backTo={false}>
       <div className="grid gap-4 xl:grid-cols-[220px_1fr]">
         <nav className="flex gap-1 overflow-x-auto rounded-xl bg-slate-100 p-1 xl:flex-col xl:self-start xl:rounded-2xl xl:border xl:border-slate-200 xl:bg-white xl:p-2" aria-label="Account sections">
           {SECTIONS.map(s => (

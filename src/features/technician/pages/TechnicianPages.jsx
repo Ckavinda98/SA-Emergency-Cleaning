@@ -2,7 +2,7 @@
 // Phones are the main device here, so the next status action is a big button pinned to the bottom.
 import React, { useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
-import { Wrench, Navigation, Phone, MapPin, CheckCircle2, Clock, Star, FileText, User, AlertTriangle, Save, Lock, ChevronRight } from 'lucide-react';
+import { Wrench, Navigation, Phone, MapPin, CheckCircle2, Clock, Star, FileText, User, AlertTriangle, Save, Lock, ChevronRight, Truck, Sparkles, Flag, Check, ArrowRight } from 'lucide-react';
 import { useAppData } from '@/app/AppData.jsx';
 import { API_BASE } from '@/shared/config/env.js';
 import { Page, Card, Kpi, Button, Tabs, Badge, InfoRow, Field, Alert, EmptyState, StickyActions, inputCls, useToast, useBreakpoint, cx } from '@/shared/ui/index.jsx';
@@ -11,21 +11,51 @@ import { StatusChip, MapEmbed, MediaStrip, isCompleted, formatDateTime, hasTech 
 const AWAITING = ['NEW', 'SUBMITTED', 'TECH_ASSIGNED', 'TECHNICIAN_ASSIGNED'];
 const ONGOING = ['ACCEPTED', 'TRAVELLING', 'ARRIVED', 'IN_PROGRESS'];
 
-// Next step in the technician workflow for each status
+// Next step in the technician workflow for each status. Each step has its own colour, icon and
+// a one-line hint, so the button visibly changes as the job moves on.
+const ACCEPT = { to: 'ACCEPTED', label: 'Accept job', short: 'Accept', icon: CheckCircle2, cls: 'bg-brand hover:bg-brand-dark text-white', hint: 'Accept to let the customer know you are taking this job.' };
 const NEXT = {
-  NEW: { to: 'ACCEPTED', label: 'Accept job' },
-  SUBMITTED: { to: 'ACCEPTED', label: 'Accept job' },
-  TECH_ASSIGNED: { to: 'ACCEPTED', label: 'Accept job' },
-  TECHNICIAN_ASSIGNED: { to: 'ACCEPTED', label: 'Accept job' },
-  ACCEPTED: { to: 'TRAVELLING', label: 'Start travelling' },
-  TRAVELLING: { to: 'ARRIVED', label: "I've arrived on site" },
-  ARRIVED: { to: 'IN_PROGRESS', label: 'Start cleaning' },
-  IN_PROGRESS: { to: 'COMPLETED', label: 'Complete job' }
+  NEW: ACCEPT, SUBMITTED: ACCEPT, TECH_ASSIGNED: ACCEPT, TECHNICIAN_ASSIGNED: ACCEPT,
+  ACCEPTED: { to: 'TRAVELLING', label: 'Start travelling', short: 'Start travel', icon: Truck, cls: 'bg-indigo-600 hover:bg-indigo-700 text-white', hint: 'Tap when you leave for the site. The customer sees you on the map.' },
+  TRAVELLING: { to: 'ARRIVED', label: "I've arrived on site", short: 'Arrived', icon: MapPin, cls: 'bg-amber-500 hover:bg-amber-600 text-white', hint: 'Tap when you reach the site.' },
+  ARRIVED: { to: 'IN_PROGRESS', label: 'Start cleaning', short: 'Start cleaning', icon: Sparkles, cls: 'bg-orange-500 hover:bg-orange-600 text-white', hint: 'Tap when you start work. The cleaning timer starts.' },
+  IN_PROGRESS: { to: 'COMPLETED', label: 'Complete job', short: 'Complete', icon: Flag, cls: 'bg-emerald-600 hover:bg-emerald-700 text-white', hint: 'Tap when the clean-up is finished. The service report is created.' }
 };
 const WORKFLOW = [
   { s: 'ACCEPTED', label: 'Accepted' }, { s: 'TRAVELLING', label: 'Travelling' }, { s: 'ARRIVED', label: 'Arrived' },
   { s: 'IN_PROGRESS', label: 'Cleaning' }, { s: 'COMPLETED', label: 'Completed' }
 ];
+const stepOf = (status) => (isCompleted(status) ? WORKFLOW.length : WORKFLOW.findIndex(w => w.s === status) + 1); // 0 = not accepted yet
+
+function NextButton({ next, busy, onClick, size = 'lg', short = false, className }) {
+  const Icon = next.icon;
+  return (
+    <button type="button" disabled={busy} onClick={onClick}
+      className={cx('inline-flex w-full items-center justify-center gap-2 rounded-xl font-bold shadow-sm transition-colors cursor-pointer disabled:cursor-not-allowed disabled:opacity-60',
+        size === 'lg' ? 'h-12 px-5 text-base' : 'h-9 px-3 text-sm', next.cls, className)}>
+      <Icon className={size === 'lg' ? 'h-5 w-5' : 'h-4 w-4'} />{busy ? 'Saving…' : short ? next.short : next.label}
+    </button>
+  );
+}
+
+function StepBar({ status, compact = false }) {
+  const step = stepOf(status);
+  return (
+    <ol className="flex items-start gap-1">
+      {WORKFLOW.map((w, i) => {
+        const done = i < step, now = i === step - 1;
+        return (
+          <li key={w.s} className="flex flex-1 flex-col items-center gap-1 text-center">
+            <span className={cx('w-full rounded-full', compact ? 'h-1.5' : 'h-2', done ? 'bg-emerald-500' : 'bg-slate-200', now && !isCompleted(status) && 'animate-pulse')} />
+            {!compact && <span className={cx('flex items-center gap-0.5 text-[10px] font-semibold md:text-xs', now ? 'text-brand-dark' : done ? 'text-emerald-700' : 'text-slate-400')}>
+              {done && <Check className="h-3 w-3" />}{w.label}
+            </span>}
+          </li>
+        );
+      })}
+    </ol>
+  );
+}
 
 function useMyJobs() {
   const { jobs, currentUser } = useAppData();
@@ -59,6 +89,14 @@ export function TechJobsPage() {
   const mine = useMyJobs();
   const { currentUser, technicians } = useAppData();
   const [tab, setTab] = useState('assigned');
+  const [highlight, setHighlight] = useState(null);
+  const { notify } = useToast();
+  const onAdvanced = (job, next) => {
+    if (next.to === 'ACCEPTED') { setTab('ongoing'); notify(`${job.jobNumber} accepted. It's now in Active. Next: start travelling.`); }
+    else notify(`${job.jobNumber}: ${next.label.toLowerCase()} done.`);
+    setHighlight(job.id);
+    setTimeout(() => setHighlight(h => (h === job.id ? null : h)), 2500);
+  };
   const assigned = mine.filter(j => AWAITING.includes(j.status));
   const ongoing = mine.filter(j => ONGOING.includes(j.status));
   const today = new Date().toDateString();
@@ -81,7 +119,7 @@ export function TechJobsPage() {
           {list.length === 0 ? (
             <EmptyState title={tab === 'assigned' ? 'No new jobs' : 'No active jobs'}>{tab === 'assigned' ? 'New dispatches from the admin desk appear here.' : 'Accept a job to start it.'}</EmptyState>
           ) : (
-            <ul className="space-y-2">{list.map(j => <TechJobCard key={j.id} job={j} />)}</ul>
+            <ul className="space-y-2">{list.map(j => <TechJobCard key={j.id} job={j} highlight={highlight === j.id} onAdvanced={onAdvanced} />)}</ul>
           )}
         </Card>
         <Card title={focus ? `Next: ${focus.locationName || focus.address}` : 'Today'} icon={MapPin} className="hidden min-h-[320px] lg:flex fit:min-h-0" bodyClassName="flex-1 flex flex-col">
@@ -92,13 +130,20 @@ export function TechJobsPage() {
   );
 }
 
-function TechJobCard({ job }) {
+function TechJobCard({ job, highlight, onAdvanced }) {
   const navigate = useNavigate();
   const update = useStatusUpdate();
   const next = NEXT[job.status];
+  const step = stepOf(job.status);
   const [busy, setBusy] = useState(false);
+  const advance = async () => {
+    setBusy(true);
+    const ok = await update(job, next.to);
+    setBusy(false);
+    if (ok) onAdvanced?.(job, next);
+  };
   return (
-    <li className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+    <li className={cx('rounded-xl border bg-white p-3 shadow-sm transition-shadow', highlight ? 'border-emerald-400 ring-2 ring-emerald-300' : 'border-slate-200')}>
       <button onClick={() => navigate(`/tech/jobs/${job.id}`)} className="block w-full text-left cursor-pointer">
         <div className="flex items-center justify-between gap-2">
           <span className="font-mono text-xs font-bold text-brand">{job.jobNumber}</span>
@@ -106,15 +151,18 @@ function TechJobCard({ job }) {
         </div>
         <div className="mt-1 text-sm font-bold text-slate-900">{job.category} · {job.customerName}</div>
         <div className="mt-0.5 flex items-center gap-1 text-xs text-slate-500"><MapPin className="h-3 w-3 shrink-0" /><span className="truncate">{job.address}</span></div>
+        {step > 0 && (
+          <div className="mt-2">
+            <StepBar status={job.status} compact />
+            <div className="mt-1 text-[11px] font-semibold text-slate-500">Step {step} of {WORKFLOW.length} · {WORKFLOW[step - 1]?.label}{next ? ` · next: ${next.short.toLowerCase()}` : ''}</div>
+          </div>
+        )}
       </button>
       <div className="mt-3 grid grid-cols-3 gap-2">
         <Button size="sm" variant="secondary" icon={Navigation} href={`https://maps.google.com/?q=${encodeURIComponent(job.address || '')}`} target="_blank" rel="noreferrer">Navigate</Button>
         <Button size="sm" variant="secondary" icon={Phone} href={`tel:${job.onsitePhone || ''}`}>Call</Button>
-        {next ? (
-          <Button size="sm" variant={next.to === 'ACCEPTED' ? 'primary' : 'success'} disabled={busy} onClick={async () => { setBusy(true); await update(job, next.to); setBusy(false); }}>
-            {busy ? '…' : next.to === 'ACCEPTED' ? 'Accept' : 'Next step'}
-          </Button>
-        ) : <Button size="sm" variant="ghost" to={`/tech/jobs/${job.id}`}>Open</Button>}
+        {next && next.to !== 'COMPLETED' ? <NextButton next={next} size="sm" short busy={busy} onClick={advance} />
+          : <Button size="sm" variant="secondary" icon={ArrowRight} to={`/tech/jobs/${job.id}`}>Open</Button>}
       </div>
     </li>
   );
@@ -128,21 +176,29 @@ export function TechJobDetailPage() {
   const { notify } = useToast();
   const bp = useBreakpoint();
   const [busy, setBusy] = useState(false);
+  const [confirming, setConfirming] = useState(false);
 
   if (!job) return <Page breadcrumb={[{ label: 'My jobs', to: '/tech/jobs' }, { label: 'Job' }]}><Card><EmptyState title={loaded ? 'Job not found' : 'Loading…'} /></Card></Page>;
 
   const next = NEXT[job.status];
-  const stepIndex = WORKFLOW.findIndex(w => w.s === job.status);
   const go = async (status) => {
     setBusy(true);
     const ok = await update(job, status);
-    if (ok) notify(status === 'COMPLETED' ? 'Job completed. The service report is ready.' : `Status updated: ${status.replace(/_/g, ' ').toLowerCase()}.`);
     setBusy(false);
+    setConfirming(false);
+    if (!ok) return;
+    const after = NEXT[status];
+    notify(status === 'COMPLETED' ? 'Job completed. The service report is ready.' : after ? `Saved. Next step: ${after.label}.` : 'Status updated.');
   };
 
-  const nextButton = next && (
-    <Button size="lg" block variant={next.to === 'COMPLETED' ? 'success' : 'primary'} disabled={busy} onClick={() => go(next.to)}>{busy ? 'Saving…' : next.label}</Button>
-  );
+  // Completing a job can't be undone, so it asks once before saving.
+  const nextButton = next && (confirming ? (
+    <div className="flex w-full flex-col gap-2 rounded-xl border border-emerald-200 bg-emerald-50 p-2 sm:flex-row sm:items-center">
+      <span className="flex-1 px-1 text-sm font-semibold text-emerald-900">Mark this job as complete?</span>
+      <Button variant="success" disabled={busy} onClick={() => go('COMPLETED')}>{busy ? 'Saving…' : 'Yes, complete'}</Button>
+      <Button variant="ghost" onClick={() => setConfirming(false)}>Not yet</Button>
+    </div>
+  ) : <NextButton next={next} busy={busy} onClick={() => (next.to === 'COMPLETED' ? setConfirming(true) : go(next.to))} />);
 
   return (
     <Page title={`${job.category} · ${job.customerName}`} subtitle={job.address}
@@ -153,16 +209,19 @@ export function TechJobDetailPage() {
       </>}>
       <div className="grid gap-4 lg:grid-cols-[1fr_1fr]">
         <div className="space-y-4">
-          <Card title="Status" icon={Clock}>
-            <ol className="flex items-center gap-1">
-              {WORKFLOW.map((w, i) => (
-                <li key={w.s} className="flex flex-1 flex-col items-center gap-1 text-center">
-                  <span className={cx('h-2 w-full rounded-full', i <= stepIndex || isCompleted(job.status) ? 'bg-emerald-500' : 'bg-slate-200')} />
-                  <span className={cx('text-[10px] font-semibold md:text-xs', i === stepIndex ? 'text-brand-dark' : 'text-slate-500')}>{w.label}</span>
-                </li>
-              ))}
-            </ol>
-            {bp !== 'mobile' && next && <div className="mt-4">{nextButton}</div>}
+          <Card title="Status" icon={Clock} actions={stepOf(job.status) > 0 && <span className="text-xs font-semibold text-slate-500">Step {Math.min(stepOf(job.status), WORKFLOW.length)} of {WORKFLOW.length}</span>}>
+            <StepBar status={job.status} />
+            {next && (
+              <div className="mt-4 rounded-xl border border-slate-200 bg-slate-50 p-3">
+                <div className="text-xs font-bold uppercase tracking-wide text-slate-500">Next step</div>
+                <div className="mt-0.5 text-sm font-semibold text-slate-900">{next.label}</div>
+                <p className="text-xs text-slate-500">{next.hint}</p>
+                {bp !== 'mobile' && <div className="mt-3">{nextButton}</div>}
+              </div>
+            )}
+            {isCompleted(job.status) && (
+              <div className="mt-4 flex items-center gap-2 rounded-xl bg-emerald-50 p-3 text-sm font-semibold text-emerald-800"><CheckCircle2 className="h-5 w-5" />Job completed. Well done.</div>
+            )}
             {job.status === 'ARRIVED' && (
               <Button variant="danger-soft" size="sm" className="mt-3" icon={AlertTriangle} disabled={busy} onClick={() => go('UNABLE_TO_ACCESS')}>Can't get in (unable to access)</Button>
             )}
@@ -204,7 +263,12 @@ export function TechJobDetailPage() {
           <p className="text-xs text-slate-500">Submitted {formatDateTime(job.submittedAt || job.createdAt)} · target attendance within 2–4 hours</p>
         </div>
       </div>
-      {bp === 'mobile' && next && <StickyActions className="!justify-stretch">{nextButton}</StickyActions>}
+      {bp === 'mobile' && next && (
+        <StickyActions className="!justify-stretch">
+          {!confirming && <div className="w-full text-xs font-semibold text-slate-500">{stepOf(job.status) > 0 ? `Step ${stepOf(job.status)} of ${WORKFLOW.length} · ` : ''}{next.hint}</div>}
+          {nextButton}
+        </StickyActions>
+      )}
     </Page>
   );
 }
@@ -213,7 +277,7 @@ export function TechHistoryPage() {
   const mine = useMyJobs();
   const done = mine.filter(j => isCompleted(j.status));
   return (
-    <Page fit title="Job history" subtitle="Completed jobs and their service reports" breadcrumb={[{ label: 'My jobs', to: '/tech/jobs' }, { label: 'History' }]}>
+    <Page fit title="Job history" subtitle="Completed jobs and their service reports" breadcrumb={[{ label: 'My jobs', to: '/tech/jobs' }, { label: 'History' }]} backTo={false}>
       <Card className="fit:min-h-0 fit:flex-1" bodyClassName="fit:flex-1 fit:overflow-y-auto">
         {done.length === 0 ? <EmptyState title="No completed jobs yet" /> : (
           <ul className="divide-y divide-slate-100">
@@ -273,7 +337,7 @@ export function TechProfilePage() {
   };
 
   return (
-    <Page title="Profile" subtitle="Your details and password" breadcrumb={[{ label: 'My jobs', to: '/tech/jobs' }, { label: 'Profile' }]} width="medium">
+    <Page title="Profile" subtitle="Your details and password" breadcrumb={[{ label: 'My jobs', to: '/tech/jobs' }, { label: 'Profile' }]} backTo={false} width="medium">
       <form onSubmit={save} className="grid gap-4 lg:grid-cols-[240px_1fr]">
         <Card className="items-center text-center">
           <div className="flex flex-col items-center gap-3">
