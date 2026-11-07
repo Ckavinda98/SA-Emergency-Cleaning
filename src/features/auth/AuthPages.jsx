@@ -4,7 +4,9 @@ import { Link, useNavigate } from 'react-router-dom';
 import { Siren, Clock, MapPin, Award, ArrowRight } from 'lucide-react';
 import { useAppData } from '@/app/AppData.jsx';
 import { API_BASE, IS_DEV } from '@/shared/config/env.js';
-import { Page, Button, Field, Alert, inputCls, useToast, cx } from '@/shared/ui/index.jsx';
+import { Page, Button, Field, Alert, inputCls, useToast, cx, useFieldErrors } from '@/shared/ui/index.jsx';
+import { PasswordInput } from '@/shared/ui/inputs.jsx';
+import { emailError } from '@shared/validation.js';
 import { CompanyRegistrationWizard } from './CompanyRegistrationWizard.jsx';
 
 const DEMO = [
@@ -44,9 +46,13 @@ export function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
 
+  const { errors, check, clear } = useFieldErrors();
+
   const submit = async (e) => {
     e.preventDefault();
-    setLoading(true); setError('');
+    setError('');
+    if (!check({ email: v => emailError(v.email), password: v => (v.password ? '' : 'Password is required.') }, { email, password })) return;
+    setLoading(true);
     try {
       const res = await fetch(`${API_BASE}/auth/login`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email, password }) });
       const data = await res.json();
@@ -66,17 +72,17 @@ export function LoginPage() {
         <div className="w-full max-w-md">
           <h1 className="text-2xl font-extrabold text-slate-900">Sign in</h1>
           <p className="mt-1 text-sm text-slate-500">Customers, technicians and staff all sign in here.</p>
-          <form onSubmit={submit} className="mt-6 space-y-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
+          <form onSubmit={submit} noValidate className="mt-6 space-y-4 rounded-2xl border border-slate-200 bg-white p-6 shadow-sm">
             <Alert>{error}</Alert>
-            <Field label="Email"><input type="email" required autoComplete="username" className={inputCls} value={email} onChange={e => setEmail(e.target.value)} /></Field>
-            <Field label="Password"><input type="password" required autoComplete="current-password" className={inputCls} value={password} onChange={e => setPassword(e.target.value)} /></Field>
-            <Button type="submit" size="lg" block disabled={loading} icon={loading ? undefined : ArrowRight}>{loading ? 'Signing in…' : 'Sign in'}</Button>
+            <Field label="Email" error={errors.email}><input type="email" autoComplete="username" className={inputCls} value={email} onChange={e => { setEmail(e.target.value); clear('email'); }} /></Field>
+            <Field label="Password" as="div" error={errors.password}><PasswordInput autoComplete="current-password" value={password} onChange={v => { setPassword(v); clear('password'); }} /></Field>
+            <Button type="submit" size="lg" block disabled={loading} icon={loading ? undefined : ArrowRight} title="Sign in with your email and password">{loading ? 'Signing in…' : 'Sign in'}</Button>
             {IS_DEV && (
               <div className="rounded-xl border border-dashed border-slate-300 p-3">
                 <div className="mb-2 text-[11px] font-bold uppercase tracking-wide text-slate-400">Development demo logins</div>
                 <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
                   {DEMO.map(d => (
-                    <button key={d.role} type="button" onClick={() => { setEmail(d.email); setPassword('Password123!'); setError(''); }}
+                    <button key={d.role} type="button" title={`Fill in the demo login for ${d.label || d.role}`} onClick={() => { setEmail(d.email); setPassword('Password123!'); setError(''); }}
                       className={cx('h-8 rounded-lg border text-xs font-semibold cursor-pointer', email === d.email ? 'border-brand bg-brand text-white' : 'border-slate-200 text-slate-700 hover:bg-slate-50')}>{d.role}</button>
                   ))}
                 </div>
@@ -85,7 +91,7 @@ export function LoginPage() {
           </form>
           <div className="mt-6 rounded-2xl border border-slate-200 bg-white p-5 text-center shadow-sm">
             <p className="text-sm text-slate-600">New business in Adelaide?</p>
-            <Button to="/register" variant="secondary" block className="mt-3">Register your business</Button>
+            <Button title="Create a membership for your business" to="/register" variant="secondary" block className="mt-3">Register your business</Button>
           </div>
           <p className="mt-4 text-center text-[11px] text-slate-400">Server: {dbStatus === 'ONLINE' ? 'online' : dbStatus.toLowerCase()}</p>
         </div>
@@ -116,7 +122,7 @@ export function RegisterPage() {
           <span className="rounded-lg bg-[#e4e4e4] px-1.5 py-1"><img src="/logo.webp" alt="" className="h-7 w-auto" /></span>
           <span className="text-sm font-extrabold text-slate-900 md:text-base">SA Emergency Cleaning</span>
         </Link>
-        <Button to="/login" variant="ghost" size="sm">Already a member? Sign in</Button>
+        <Button title="Go to the sign-in page" to="/login" variant="ghost" size="sm">Already a member? Sign in</Button>
       </header>
       <Page title="Register your business" subtitle="Four short steps. Coverage is Adelaide, South Australia only." width="medium">
         {configLoaded ? <CompanyRegistrationWizard config={config} onClose={() => navigate('/login')} onRegisterSuccess={onSuccess} />

@@ -39,7 +39,7 @@ export function RequestsPage() {
       title="My requests"
       subtitle="Track live call-outs and look back at completed work"
       breadcrumb={[{ label: 'Dashboard', to: '/app' }, { label: 'Requests' }]} backTo={false}
-      actions={<Button to="/app/requests/new" icon={Plus}>New request</Button>}
+      actions={<Button title="Request emergency cleaning" to="/app/requests/new" icon={Plus}>New request</Button>}
     >
       <div className="mb-3 flex flex-col gap-3 lg:flex-row lg:items-center">
         <Tabs value={status} onChange={v => setParams({ status: v })} tabs={[

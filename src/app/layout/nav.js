@@ -1,7 +1,7 @@
 // Sidebar and mobile tab-bar items for each role (see section 3 of the redesign plan)
 import {
   LayoutDashboard, ClipboardList, PlusCircle, Award, ShieldCheck, UserCog, Wrench, History, User,
-  Radio, Map, Building2, Users, Gift, BarChart3, PhoneCall, Settings, Eye, MoreHorizontal
+  Radio, Map, Building2, Users, Gift, BarChart3, PhoneCall, Settings, Eye, MoreHorizontal, Activity
 } from 'lucide-react';
 
 export const NAV = {
@@ -26,10 +26,14 @@ export const NAV = {
     { to: '/admin/rewards', label: 'Rewards queue', icon: Gift },
     { to: '/admin/reports', label: 'Reports', icon: BarChart3 },
     { to: '/admin/hotline', label: 'Hotline booking', icon: PhoneCall },
+    { to: '/settings/activity', label: 'Activity log', icon: Activity },
     { to: '/settings/pricing', label: 'Settings', icon: Settings }
   ],
   config: [
-    { to: '/settings/pricing', label: 'Pricing & rules', icon: Settings }
+    { to: '/settings/pricing', label: 'Pricing & rules', icon: Settings, also: ['/settings/plans', '/settings/rules', '/settings/rewards'] },
+    { to: '/settings/customers', label: 'Customers', icon: Building2 },
+    { to: '/settings/technicians', label: 'Technicians', icon: Users },
+    { to: '/settings/activity', label: 'Activity log', icon: Activity }
   ]
 };
 
@@ -59,5 +63,10 @@ export const MOBILE_TABS = {
     { to: '/admin/technicians', label: 'Techs', icon: Users },
     { menu: true, label: 'More', icon: MoreHorizontal }
   ],
-  config: []
+  config: [
+    { to: '/settings/pricing', label: 'Pricing', icon: Settings },
+    { to: '/settings/customers', label: 'Customers', icon: Building2 },
+    { to: '/settings/technicians', label: 'Techs', icon: Users },
+    { to: '/settings/activity', label: 'Activity', icon: Activity }
+  ]
 };

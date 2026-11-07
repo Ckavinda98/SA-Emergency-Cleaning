@@ -1,11 +1,13 @@
 // W11–W13 Technician pages: job queue, job detail with status workflow, history and profile.
 // Phones are the main device here, so the next status action is a big button pinned to the bottom.
 import React, { useMemo, useState } from 'react';
-import { Link, useNavigate, useParams } from 'react-router-dom';
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
 import { Wrench, Navigation, Phone, MapPin, CheckCircle2, Clock, Star, FileText, User, AlertTriangle, Save, Lock, ChevronRight, Truck, Sparkles, Flag, Check, ArrowRight } from 'lucide-react';
 import { useAppData, isTechniciansJob } from '@/app/AppData.jsx';
 import { API_BASE } from '@/shared/config/env.js';
-import { Page, Card, Kpi, Button, Tabs, Badge, InfoRow, Field, Alert, EmptyState, StickyActions, inputCls, useToast, useBreakpoint, cx } from '@/shared/ui/index.jsx';
+import { Page, Card, Kpi, Button, Tabs, Badge, InfoRow, Field, Alert, EmptyState, StickyActions, inputCls, useToast, useBreakpoint, cx, useFieldErrors } from '@/shared/ui/index.jsx';
+import { PhoneInput, PasswordInput } from '@/shared/ui/inputs.jsx';
+import { phoneError, passwordError, confirmPasswordError, personNameError } from '@shared/validation.js';
 import { StatusChip, MapEmbed, MediaStrip, isCompleted, formatDateTime, hasTech } from '@/shared/ui/jobs.jsx';
 
 const AWAITING = ['NEW', 'SUBMITTED', 'TECH_ASSIGNED', 'TECHNICIAN_ASSIGNED'];
@@ -30,7 +32,7 @@ const stepOf = (status) => (isCompleted(status) ? WORKFLOW.length : WORKFLOW.fin
 function NextButton({ next, busy, onClick, size = 'lg', short = false, className }) {
   const Icon = next.icon;
   return (
-    <button type="button" disabled={busy} onClick={onClick}
+    <button type="button" disabled={busy} onClick={onClick} title={next.hint}
       className={cx('inline-flex w-full items-center justify-center gap-2 rounded-xl font-bold shadow-sm transition-colors cursor-pointer disabled:cursor-not-allowed disabled:opacity-60',
         size === 'lg' ? 'h-12 px-5 text-base' : 'h-9 px-3 text-sm', next.cls, className)}>
       <Icon className={size === 'lg' ? 'h-5 w-5' : 'h-4 w-4'} />{busy ? 'Saving…' : short ? next.short : next.label}
@@ -87,11 +89,15 @@ export function TechJobsPage() {
   const mine = useMyJobs();
   const { currentUser, activeTechnician: me } = useAppData();
   const isAdmin = currentUser?.role === 'admin';
-  const [tab, setTab] = useState('assigned');
+  // The tab lives in the address (?tab=assigned|ongoing) so the tiles above can open it
+  const [params, setParams] = useSearchParams();
+  const tab = params.get('tab') === 'ongoing' ? 'ongoing' : 'assigned';
+  const setTab = (t) => setParams(p => { const n = new URLSearchParams(p); n.set('tab', t); return n; }, { replace: true });
   const [highlight, setHighlight] = useState(null);
   const { notify } = useToast();
   const onAdvanced = (job, next) => {
     if (next.to === 'ACCEPTED') { setTab('ongoing'); notify(`${job.jobNumber} accepted. It's now in Active. Next: start travelling.`); }
+    else if (next.to === 'COMPLETED') notify(`${job.jobNumber} completed. The service report is ready in History.`);
     else notify(`${job.jobNumber}: ${next.label.toLowerCase()} done.`);
     setHighlight(job.id);
     setTimeout(() => setHighlight(h => (h === job.id ? null : h)), 2500);
@@ -107,10 +113,10 @@ export function TechJobsPage() {
     <Page fit title={isAdmin ? (me ? `${me.name}'s jobs` : 'Technician view') : `Hi ${(currentUser?.name || '').split(' ')[0] || 'there'}`}
       subtitle={isAdmin ? 'What this technician sees. Pick another technician at the top.' : 'Your dispatched and active emergency jobs'}>
       <div className="grid shrink-0 grid-cols-2 gap-3 lg:grid-cols-4">
-        <Kpi label="Waiting for you" value={assigned.length} icon={Clock} tone={assigned.length ? 'danger' : 'slate'} />
-        <Kpi label="Active" value={ongoing.length} icon={Wrench} tone="warning" />
-        <Kpi label="Done today" value={doneToday.length} icon={CheckCircle2} tone="success" className="hidden lg:block" />
-        <Kpi label="Rating" value={me?.rating != null ? `${me.rating} / 5` : '–'} icon={Star} tone="brand" className="hidden lg:block" />
+        <Kpi label="Waiting for you" value={assigned.length} icon={Clock} tone={assigned.length ? 'danger' : 'slate'} to="?tab=assigned" title="Show new jobs waiting for you to accept" />
+        <Kpi label="Active" value={ongoing.length} icon={Wrench} tone="warning" to="?tab=ongoing" title="Show jobs you have accepted and are working on" />
+        <Kpi label="Done today" value={doneToday.length} icon={CheckCircle2} tone="success" className="hidden lg:block" to="/tech/history" title="Open your completed jobs" />
+        <Kpi label="Rating" value={me?.rating != null ? `${me.rating} / 5` : '–'} icon={Star} tone="brand" className="hidden lg:block" to="/tech/profile" title="Open your profile" />
       </div>
       <div className="mt-4 grid gap-4 lg:grid-cols-[1fr_1.2fr] fit:min-h-0 fit:flex-1 fit:grid-rows-[minmax(0,1fr)]">
         <Card title="Job queue" icon={Wrench} className="fit:min-h-0" bodyClassName="fit:flex-1 fit:overflow-y-auto"
@@ -135,15 +141,18 @@ function TechJobCard({ job, highlight, onAdvanced }) {
   const next = NEXT[job.status];
   const step = stepOf(job.status);
   const [busy, setBusy] = useState(false);
+  const [confirming, setConfirming] = useState(false);
   const advance = async () => {
     setBusy(true);
     const ok = await update(job, next.to);
     setBusy(false);
+    setConfirming(false);
     if (ok) onAdvanced?.(job, next);
   };
+  const finishing = next?.to === 'COMPLETED';
   return (
     <li className={cx('rounded-xl border bg-white p-3 shadow-sm transition-shadow', highlight ? 'border-emerald-400 ring-2 ring-emerald-300' : 'border-slate-200')}>
-      <button onClick={() => navigate(`/tech/jobs/${job.id}`)} className="block w-full text-left cursor-pointer">
+      <button onClick={() => navigate(`/tech/jobs/${job.id}`)} title={`Open ${job.jobNumber} to see the full details`} className="block w-full text-left cursor-pointer">
         <div className="flex items-center justify-between gap-2">
           <span className="font-mono text-xs font-bold text-brand">{job.jobNumber}</span>
           <StatusChip status={job.status} />
@@ -157,12 +166,23 @@ function TechJobCard({ job, highlight, onAdvanced }) {
           </div>
         )}
       </button>
-      <div className="mt-3 grid grid-cols-3 gap-2">
-        <Button size="sm" variant="secondary" icon={Navigation} href={`https://maps.google.com/?q=${encodeURIComponent(job.address || '')}`} target="_blank" rel="noreferrer">Navigate</Button>
-        <Button size="sm" variant="secondary" icon={Phone} href={`tel:${job.onsitePhone || ''}`}>Call</Button>
-        {next && next.to !== 'COMPLETED' ? <NextButton next={next} size="sm" short busy={busy} onClick={advance} />
-          : <Button size="sm" variant="secondary" icon={ArrowRight} to={`/tech/jobs/${job.id}`}>Open</Button>}
-      </div>
+      {confirming ? (
+        // Completing can't be undone, so the card asks once before saving
+        <div className="mt-3 flex flex-col gap-2 rounded-xl border border-emerald-200 bg-emerald-50 p-2 sm:flex-row sm:items-center">
+          <span className="flex-1 px-1 text-sm font-semibold text-emerald-900">Mark {job.jobNumber} as complete?</span>
+          <div className="grid grid-cols-2 gap-2 sm:flex">
+            <Button size="sm" variant="success" icon={Flag} disabled={busy} onClick={advance} title="Yes: finish the job and create the service report">{busy ? 'Saving…' : 'Yes, complete'}</Button>
+            <Button size="sm" variant="ghost" onClick={() => setConfirming(false)} title="Keep the job open">Not yet</Button>
+          </div>
+        </div>
+      ) : (
+        <div className="mt-3 grid grid-cols-3 gap-2">
+          <Button size="sm" variant="secondary" icon={Navigation} href={`https://maps.google.com/?q=${encodeURIComponent(job.address || '')}`} target="_blank" rel="noreferrer" title="Get directions to the site in Google Maps">Navigate</Button>
+          <Button size="sm" variant="secondary" icon={Phone} href={`tel:${job.onsitePhone || ''}`} title={`Call the on-site contact${job.onsitePhone ? ` on ${job.onsitePhone}` : ''}`}>Call</Button>
+          {next ? <NextButton next={next} size="sm" short busy={busy} onClick={finishing ? () => setConfirming(true) : advance} />
+            : <Button size="sm" variant="secondary" icon={ArrowRight} to={`/tech/jobs/${job.id}`} title="Open the job">Open</Button>}
+        </div>
+      )}
     </li>
   );
 }
@@ -194,8 +214,8 @@ export function TechJobDetailPage() {
   const nextButton = next && (confirming ? (
     <div className="flex w-full flex-col gap-2 rounded-xl border border-emerald-200 bg-emerald-50 p-2 sm:flex-row sm:items-center">
       <span className="flex-1 px-1 text-sm font-semibold text-emerald-900">Mark this job as complete?</span>
-      <Button variant="success" disabled={busy} onClick={() => go('COMPLETED')}>{busy ? 'Saving…' : 'Yes, complete'}</Button>
-      <Button variant="ghost" onClick={() => setConfirming(false)}>Not yet</Button>
+      <Button title="Yes: finish the job and create the service report" variant="success" disabled={busy} onClick={() => go('COMPLETED')}>{busy ? 'Saving…' : 'Yes, complete'}</Button>
+      <Button title="Keep the job open" variant="ghost" onClick={() => setConfirming(false)}>Not yet</Button>
     </div>
   ) : <NextButton next={next} busy={busy} onClick={() => (next.to === 'COMPLETED' ? setConfirming(true) : go(next.to))} />);
 
@@ -204,7 +224,7 @@ export function TechJobDetailPage() {
       breadcrumb={[{ label: 'My jobs', to: '/tech/jobs' }, { label: job.jobNumber }]}
       actions={<>
         <StatusChip status={job.status} />
-        {isCompleted(job.status) && <Button to={`/tech/jobs/${job.id}/report`} icon={FileText}>Service report</Button>}
+        {isCompleted(job.status) && <Button title="Open the service report for this job" to={`/tech/jobs/${job.id}/report`} icon={FileText}>Service report</Button>}
       </>}>
       <div className="grid gap-4 lg:grid-cols-[1fr_1fr]">
         <div className="space-y-4">
@@ -222,7 +242,7 @@ export function TechJobDetailPage() {
               <div className="mt-4 flex items-center gap-2 rounded-xl bg-emerald-50 p-3 text-sm font-semibold text-emerald-800"><CheckCircle2 className="h-5 w-5" />Job completed. Well done.</div>
             )}
             {job.status === 'ARRIVED' && (
-              <Button variant="danger-soft" size="sm" className="mt-3" icon={AlertTriangle} disabled={busy} onClick={() => go('UNABLE_TO_ACCESS')}>Can't get in (unable to access)</Button>
+              <Button title="Tell dispatch you cannot get into the site" variant="danger-soft" size="sm" className="mt-3" icon={AlertTriangle} disabled={busy} onClick={() => go('UNABLE_TO_ACCESS')}>Can't get in (unable to access)</Button>
             )}
             {job.status === 'IN_PROGRESS' && job.timerMinutes !== undefined && <p className="mt-3 text-xs text-slate-500">Cleaning for {job.timerMinutes} min.</p>}
           </Card>
@@ -234,8 +254,8 @@ export function TechJobDetailPage() {
               <InfoRow label="Phone">{job.onsitePhone && <a href={`tel:${job.onsitePhone}`} className="text-brand underline">{job.onsitePhone}</a>}</InfoRow>
             </dl>
             <div className="mt-3 grid grid-cols-2 gap-2">
-              <Button variant="secondary" icon={Navigation} href={`https://maps.google.com/?q=${encodeURIComponent(job.address || '')}`} target="_blank" rel="noreferrer">Navigate</Button>
-              <Button variant="secondary" icon={Phone} href={`tel:${job.onsitePhone || ''}`}>Call contact</Button>
+              <Button title="Get directions to the site in Google Maps" variant="secondary" icon={Navigation} href={`https://maps.google.com/?q=${encodeURIComponent(job.address || '')}`} target="_blank" rel="noreferrer">Navigate</Button>
+              <Button title="Call the on-site contact" variant="secondary" icon={Phone} href={`tel:${job.onsitePhone || ''}`}>Call contact</Button>
             </div>
           </Card>
           <Card title="Access and safety" icon={Lock}>
@@ -332,13 +352,22 @@ function TechProfileForm() {
   const [phone, setPhone] = useState(currentUser?.phone || '');
   const [avatar, setAvatar] = useState(currentUser?.avatar || '');
   const [password, setPassword] = useState('');
+  const [confirm, setConfirm] = useState('');
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
+  const { errors, check, clear, fromServer } = useFieldErrors();
+  const edit = (setter, field) => (v) => { setter(v); clear(field); };
 
   const save = async (e) => {
     e.preventDefault();
     setError('');
-    if (password && password.length < 8) return setError('The new password must be at least 8 characters.');
+    const ok = check({
+      name: v => personNameError(v.name, { label: 'Full name' }),
+      phone: v => phoneError(v.phone),
+      password: v => (v.password ? passwordError(v.password) : ''),
+      confirm: v => (v.password ? confirmPasswordError(v.password, v.confirm) : '')
+    }, { name, phone, password, confirm });
+    if (!ok) return;
     setSaving(true);
     try {
       const techId = currentUser?.techId || currentUser?.technicianId || currentUser?.id;
@@ -346,8 +375,8 @@ function TechProfileForm() {
         method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name, phone, password: password || undefined })
       });
       const data = await res.json();
-      if (res.ok) { setCurrentUser({ ...currentUser, name, phone, avatar }); setPassword(''); notify('Profile saved.'); }
-      else setError(data.error || 'The profile could not be saved.');
+      if (res.ok) { setCurrentUser({ ...currentUser, name, phone, avatar }); setPassword(''); setConfirm(''); notify('Profile saved.'); }
+      else if (!fromServer(data)) setError(data.error || 'The profile could not be saved.');
     } catch { setError('Cannot reach the server. Nothing was saved.'); }
     setSaving(false);
   };
@@ -362,7 +391,7 @@ function TechProfileForm() {
 
   return (
     <Page title="Profile" subtitle="Your details and password" breadcrumb={[{ label: 'My jobs', to: '/tech/jobs' }, { label: 'Profile' }]} backTo={false} width="medium">
-      <form onSubmit={save} className="grid gap-4 lg:grid-cols-[240px_1fr]">
+      <form onSubmit={save} noValidate className="grid gap-4 lg:grid-cols-[240px_1fr]">
         <Card className="items-center text-center">
           <div className="flex flex-col items-center gap-3">
             {avatar ? <img src={avatar} alt="" className="h-24 w-24 rounded-full border border-slate-200 object-cover" />
@@ -377,15 +406,24 @@ function TechProfileForm() {
           <Alert>{error}</Alert>
           <Card title="Details" icon={User}>
             <div className="grid gap-3 md:grid-cols-2">
-              <Field label="Full name" required><input required className={inputCls} value={name} onChange={e => setName(e.target.value)} autoComplete="name" /></Field>
-              <Field label="Mobile phone" required><input required type="tel" className={inputCls} value={phone} onChange={e => setPhone(e.target.value)} autoComplete="tel" /></Field>
+              <Field label="Full name" required error={errors.name}><input className={inputCls} value={name} onChange={e => edit(setName, 'name')(e.target.value)} autoComplete="name" /></Field>
+              <Field label="Mobile phone" required error={errors.phone}><PhoneInput value={phone} onChange={edit(setPhone, 'phone')} /></Field>
               <Field label="Email (login)"><input className={cx(inputCls, 'bg-slate-50')} value={currentUser?.email || ''} disabled /></Field>
             </div>
           </Card>
           <Card title="Security" icon={Lock}>
-            <Field label="New password" hint="Leave blank to keep your current password"><input type="password" className={inputCls} value={password} onChange={e => setPassword(e.target.value)} autoComplete="new-password" /></Field>
+            <div className="grid gap-3 md:grid-cols-2">
+              <Field label="New password" hint="Leave blank to keep your current password" as="div" error={errors.password}>
+                <PasswordInput value={password} onChange={edit(setPassword, 'password')} showChecklist />
+              </Field>
+              {password && (
+                <Field label="Confirm new password" required as="div" error={errors.confirm}>
+                  <PasswordInput value={confirm} onChange={edit(setConfirm, 'confirm')} />
+                </Field>
+              )}
+            </div>
           </Card>
-          <StickyActions><Button type="submit" icon={Save} disabled={saving}>{saving ? 'Saving…' : 'Save profile'}</Button></StickyActions>
+          <StickyActions><Button type="submit" icon={Save} disabled={saving} title="Save your name, phone, photo and new password">{saving ? 'Saving…' : 'Save profile'}</Button></StickyActions>
         </div>
       </form>
     </Page>

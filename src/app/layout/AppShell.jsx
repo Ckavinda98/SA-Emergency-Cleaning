@@ -4,7 +4,7 @@
 //  Mobile (<768): no sidebar; ≡ opens it as a drawer; tab bar at the bottom.
 import React, { useEffect, useRef, useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate, Link } from 'react-router-dom';
-import { Menu, LogOut, ChevronDown, User, Building2, X, Siren, Search, Wrench } from 'lucide-react';
+import { Menu, LogOut, ChevronDown, ChevronRight, User, Building2, X, Siren, Search, Wrench } from 'lucide-react';
 import { GlobalSearch } from './GlobalSearch.jsx';
 import { useAppData } from '@/app/AppData.jsx';
 import { useBreakpoint, cx } from '@/shared/ui/index.jsx';
@@ -69,7 +69,7 @@ export function AppShell() {
             <aside className="relative z-10 flex h-full w-[280px] max-w-[85vw] flex-col overflow-y-auto border-r border-slate-200 bg-white shadow-xl safe-top">
               <div className="flex items-center justify-between border-b border-slate-100 px-4 py-3">
                 <span className="text-sm font-bold text-slate-900">Menu</span>
-                <button onClick={() => setOverlayOpen(false)} className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 cursor-pointer" aria-label="Close menu"><X className="h-5 w-5" /></button>
+                <button title="Close the menu" onClick={() => setOverlayOpen(false)} className="rounded-lg p-1.5 text-slate-500 hover:bg-slate-100 cursor-pointer" aria-label="Close menu"><X className="h-5 w-5" /></button>
               </div>
               <SidebarContent role={role} onLogout={logout} />
             </aside>
@@ -130,6 +130,7 @@ function Header({ onToggle, expanded }) {
       <button
         onClick={onToggle}
         aria-label={expanded ? 'Hide menu' : 'Show menu'}
+        title={expanded ? 'Hide the menu' : 'Show the menu'}
         aria-expanded={expanded}
         className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-50 cursor-pointer"
       >
@@ -145,7 +146,7 @@ function Header({ onToggle, expanded }) {
       {bp === 'mobile' ? (
         <>
           <div className="flex-1" />
-          <button type="button" onClick={() => setMobileSearch(true)} aria-label="Search" className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-50 cursor-pointer"><Search className="h-5 w-5" /></button>
+          <button title="Search" type="button" onClick={() => setMobileSearch(true)} aria-label="Search" className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-50 cursor-pointer"><Search className="h-5 w-5" /></button>
           {mobileSearch && <GlobalSearch role={currentUser.role} mobile onClose={() => setMobileSearch(false)} />}
         </>
       ) : (
@@ -157,8 +158,28 @@ function Header({ onToggle, expanded }) {
   );
 }
 
+// What the signed-in person sees about themselves. Customers and technicians see their name (and the
+// company for a customer), never the account type; staff keep the role label. The name opens their profile.
+function useIdentity() {
+  const { currentUser: user, activeCustomer } = useAppData();
+  const profilePath = user.role === 'customer' ? '/app/account/profile' : user.role === 'technician' ? '/tech/profile' : null;
+  if (user.role === 'customer') {
+    const company = activeCustomer?.businessName || user.businessName || '';
+    return { title: company || user.name, sub: company ? user.name : '', initial: company || user.name, avatar: user.avatar, profilePath, showRole: false };
+  }
+  if (user.role === 'technician') return { title: user.name, sub: user.email || '', initial: user.name, avatar: user.avatar, profilePath, showRole: false };
+  return { title: user.name, sub: user.role, initial: user.name, avatar: user.avatar, profilePath, showRole: true };
+}
+
+function Initial({ id, size = 'h-8 w-8' }) {
+  return id.avatar
+    ? <img src={id.avatar} alt="" className={cx(size, 'shrink-0 rounded-full border border-slate-200 object-cover')} />
+    : <span className={cx(size, 'flex shrink-0 items-center justify-center rounded-full bg-brand text-sm font-bold text-white')}>{(id.initial || 'U').charAt(0).toUpperCase()}</span>;
+}
+
 function AvatarMenu({ user, onLogout }) {
   const [open, setOpen] = useState(false);
+  const id = useIdentity();
   const ref = useRef(null);
   const navigate = useNavigate();
   useEffect(() => {
@@ -166,29 +187,41 @@ function AvatarMenu({ user, onLogout }) {
     document.addEventListener('mousedown', close);
     return () => document.removeEventListener('mousedown', close);
   }, []);
-  const profilePath = user.role === 'customer' ? '/app/account/profile' : user.role === 'technician' ? '/tech/profile' : null;
+  const { profilePath } = id;
+  const nameBlock = (
+    <span className="hidden text-left leading-tight md:block">
+      <span className="block max-w-[160px] truncate text-xs font-bold text-slate-900">{id.title}</span>
+      {id.sub && <span className={cx('block max-w-[160px] truncate text-[10px]', id.showRole ? 'font-bold uppercase text-brand' : 'text-slate-500')}>{id.sub}</span>}
+    </span>
+  );
   return (
-    <div className="relative" ref={ref}>
-      <button onClick={() => setOpen(o => !o)} className="flex items-center gap-2 rounded-xl border border-slate-200 px-2 py-1.5 hover:bg-slate-50 cursor-pointer" aria-haspopup="menu" aria-expanded={open}>
-        <span className="flex h-8 w-8 items-center justify-center rounded-full bg-brand text-sm font-bold text-white">{(user.name || 'U').charAt(0)}</span>
-        <span className="hidden text-left leading-tight md:block">
-          <span className="block max-w-[140px] truncate text-xs font-bold text-slate-900">{user.name}</span>
-          <span className="block text-[10px] font-bold uppercase text-brand">{user.role}</span>
-        </span>
-        <ChevronDown className="hidden h-4 w-4 text-slate-400 md:block" />
+    <div className="relative flex items-center rounded-xl border border-slate-200" ref={ref}>
+      {profilePath ? (
+        // Photo and name open the profile; the arrow opens the menu with Log out
+        <Link to={profilePath} title="Open your profile" className="flex items-center gap-2 rounded-l-xl py-1.5 pl-2 pr-1 hover:bg-slate-50">
+          <Initial id={id} />{nameBlock}
+        </Link>
+      ) : (
+        <button onClick={() => setOpen(o => !o)} title="Account menu" className="flex items-center gap-2 rounded-l-xl py-1.5 pl-2 pr-1 hover:bg-slate-50 cursor-pointer">
+          <Initial id={id} />{nameBlock}
+        </button>
+      )}
+      <button onClick={() => setOpen(o => !o)} title="More: profile and log out" aria-label="Account menu" aria-haspopup="menu" aria-expanded={open}
+        className="flex h-11 items-center rounded-r-xl px-1.5 text-slate-400 hover:bg-slate-50 hover:text-slate-700 cursor-pointer">
+        <ChevronDown className="h-4 w-4" />
       </button>
       {open && (
-        <div role="menu" className="absolute right-0 z-50 mt-2 w-56 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 text-sm shadow-lg">
-          <div className="border-b border-slate-100 px-4 py-2 md:hidden">
-            <div className="truncate font-bold text-slate-900">{user.name}</div>
-            <div className="text-[11px] font-bold uppercase text-brand">{user.role}</div>
+        <div role="menu" className="absolute right-0 top-full z-50 mt-2 w-56 overflow-hidden rounded-xl border border-slate-200 bg-white py-1 text-sm shadow-lg">
+          <div className="border-b border-slate-100 px-4 py-2">
+            <div className="truncate font-bold text-slate-900">{id.title}</div>
+            {id.sub && <div className={cx('truncate text-[11px]', id.showRole ? 'font-bold uppercase text-brand' : 'text-slate-500')}>{id.sub}</div>}
           </div>
           {profilePath && (
-            <button role="menuitem" onClick={() => { setOpen(false); navigate(profilePath); }} className="flex w-full items-center gap-2 px-4 py-2.5 text-left font-medium text-slate-700 hover:bg-slate-50 cursor-pointer">
+            <button role="menuitem" title="Open your profile" onClick={() => { setOpen(false); navigate(profilePath); }} className="flex w-full items-center gap-2 px-4 py-2.5 text-left font-medium text-slate-700 hover:bg-slate-50 cursor-pointer">
               <User className="h-4 w-4 text-brand" /> Profile
             </button>
           )}
-          <button role="menuitem" onClick={() => { setOpen(false); onLogout(); }} className="flex w-full items-center gap-2 px-4 py-2.5 text-left font-medium text-red-600 hover:bg-red-50 cursor-pointer">
+          <button role="menuitem" title="Sign out of SA Emergency Cleaning" onClick={() => { setOpen(false); onLogout(); }} className="flex w-full items-center gap-2 px-4 py-2.5 text-left font-medium text-red-600 hover:bg-red-50 cursor-pointer">
             <LogOut className="h-4 w-4" /> Log out
           </button>
         </div>
@@ -203,7 +236,7 @@ function activeTo(items, pathname) {
   let best = null;
   for (const it of items) {
     if (!it.to) continue;
-    const hit = it.end ? pathname === it.to : (pathname === it.to || pathname.startsWith(it.to + '/'));
+    const hit = it.end ? pathname === it.to : (pathname === it.to || pathname.startsWith(it.to + '/') || (it.also || []).includes(pathname));
     if (hit && (!best || it.to.length > best.length)) best = it.to;
   }
   return best;
@@ -215,24 +248,25 @@ const itemCls = (active) => cx(
 );
 
 function SidebarContent({ role, onLogout }) {
-  const { currentUser, activeCustomer } = useAppData();
+  const { currentUser } = useAppData();
   const isAdmin = currentUser.role === 'admin';
   const { pathname } = useLocation();
+  const id = useIdentity();
+  const ProfileTag = id.profilePath ? Link : 'div';
   const items = NAV[role] || [];
   const views = isAdmin ? [{ to: '/admin/dispatch', label: 'Admin desk', icon: ADMIN_VIEWS[0].icon }, ...ADMIN_VIEWS].filter(v => !(role === 'admin' && v.to === '/admin/dispatch')) : [];
   const current = activeTo([...items, ...views], pathname);
   return (
     <div className="flex flex-1 flex-col gap-1 p-3">
-      <div className="mb-2 flex items-center gap-2.5 rounded-xl border border-slate-200 bg-slate-50 p-2.5">
-        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-brand text-sm font-bold text-white">{(currentUser.name || 'U').charAt(0)}</span>
-        <div className="min-w-0">
-          <div className="truncate text-sm font-bold text-slate-900">{currentUser.name}</div>
-          <div className="truncate text-[11px] text-slate-500">
-            <span className="font-bold uppercase text-brand">{currentUser.role}</span>
-            {role === 'customer' && activeCustomer?.businessName ? ` · ${activeCustomer.businessName}` : ''}
-          </div>
+      <ProfileTag to={id.profilePath || undefined} title={id.profilePath ? 'Open your profile' : undefined}
+        className={cx('mb-2 flex items-center gap-2.5 rounded-xl border border-slate-200 bg-slate-50 p-2.5', id.profilePath && 'hover:border-brand hover:bg-sky-50')}>
+        <Initial id={id} size="h-9 w-9" />
+        <div className="min-w-0 flex-1">
+          <div className="truncate text-sm font-bold text-slate-900">{id.title}</div>
+          {id.sub && <div className={cx('truncate text-[11px]', id.showRole ? 'font-bold uppercase text-brand' : 'text-slate-500')}>{id.sub}</div>}
         </div>
-      </div>
+        {id.profilePath && <ChevronRight className="h-4 w-4 shrink-0 text-slate-300" />}
+      </ProfileTag>
       {role === 'customer' && (
         <Link to="/app/requests/new" className="mb-2 flex items-center justify-center gap-2 rounded-xl bg-red-600 px-3 py-2.5 text-sm font-bold text-white shadow-sm hover:bg-red-700">
           <Siren className="h-4 w-4" /> Emergency request
@@ -254,7 +288,7 @@ function SidebarContent({ role, onLogout }) {
         </>
       )}
       <div className="flex-1" />
-      <button onClick={onLogout} className="mt-4 flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-red-600 hover:bg-red-50 cursor-pointer">
+      <button title="Sign out of SA Emergency Cleaning" onClick={onLogout} className="mt-4 flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-red-600 hover:bg-red-50 cursor-pointer">
         <LogOut className="h-[18px] w-[18px]" /> Log out
       </button>
     </div>
@@ -291,7 +325,7 @@ function BottomTabs({ role, onMore }) {
   return (
     <nav className="safe-bottom fixed inset-x-0 bottom-0 z-40 flex items-stretch justify-around border-t border-slate-200 bg-white" aria-label="Main">
       {tabs.map(t => t.menu ? (
-        <button key="more" onClick={onMore} className="flex flex-1 flex-col items-center justify-center gap-0.5 py-2 text-[10px] font-semibold text-slate-500 cursor-pointer">
+        <button title="More pages and settings" key="more" onClick={onMore} className="flex flex-1 flex-col items-center justify-center gap-0.5 py-2 text-[10px] font-semibold text-slate-500 cursor-pointer">
           <t.icon className="h-5 w-5" />{t.label}
         </button>
       ) : t.primary ? (

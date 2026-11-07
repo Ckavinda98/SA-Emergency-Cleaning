@@ -2,7 +2,7 @@
 //   customer    -> their own company's requests and sites
 //   technician  -> jobs assigned to them
 //   admin       -> every job, customer, site and technician
-//   config      -> settings sections
+//   config      -> settings sections, customers and technicians (opened in the config area)
 // Rows are filtered in JavaScript rather than with SQL LIKE so matching is case-insensitive on
 // both SQLite and PostgreSQL. The data set is small (one company's jobs, or a few hundred rows).
 import { prisma } from '../../db/prisma.js';
@@ -39,6 +39,8 @@ export async function search(actor, rawQuery) {
 
   if (role === 'CONFIG') {
     for (const s of SETTINGS) if (hit(s.title, s.subtitle)) results.push({ type: 'setting', id: s.key, title: s.title, subtitle: s.subtitle, url: `/settings/${s.key}` });
+    if (hit('activity log history changes audit')) results.push({ type: 'setting', id: 'activity', title: 'Activity log', subtitle: 'Every add, edit and delete', url: '/settings/activity' });
+    await addCustomersAndTechnicians(results, hit, '/settings');
     return { query: q, results };
   }
 
@@ -81,6 +83,11 @@ export async function search(actor, rawQuery) {
 
   if (role !== 'ADMIN') return { query: q, results };
 
+  await addCustomersAndTechnicians(results, hit, '/admin');
+  return { query: q, results };
+}
+
+async function addCustomersAndTechnicians(results, hit, base) {
   // Customers
   const customers = await prisma.organization.findMany({ take: MAX_ROWS });
   customers.filter(c => hit(c.businessName, c.abn, c.primaryContactName, c.email, c.phoneNumber, c.membershipPlan))
@@ -89,7 +96,7 @@ export async function search(actor, rawQuery) {
       type: 'customer', id: c.id, title: c.businessName,
       subtitle: [c.primaryContactName, c.email, c.phoneNumber].filter(Boolean).join(' · '),
       meta: c.subscriptionStatus === 'ACTIVE' ? undefined : c.subscriptionStatus.toLowerCase(),
-      url: `/admin/customers/${c.id}`
+      url: `${base}/customers/${c.id}`
     }));
 
   // Technicians
@@ -99,8 +106,6 @@ export async function search(actor, rawQuery) {
     .forEach(t => results.push({
       type: 'technician', id: t.id, title: t.name,
       subtitle: [t.phone, t.user?.email].filter(Boolean).join(' · '),
-      url: `/admin/technicians/${t.id}`
+      url: `${base}/technicians/${t.id}`
     }));
-
-  return { query: q, results };
 }

@@ -8,7 +8,6 @@ import { recordLogin } from '../../lib/loginLog.js';
 import { recordAudit } from '../../lib/audit.js';
 import { isAdelaideLocation } from '../../../shared/location.js';
 
-const AVATAR = 'https://images.unsplash.com/photo-1573496359142-b8d87734a5a2?auto=format&fit=crop&w=150&q=80';
 
 function issueTokens(user) {
   const payload = {
@@ -26,7 +25,7 @@ function issueTokens(user) {
 
 // The user object the web app keeps after login
 function toProfile(user) {
-  const profile = { id: user.id, name: user.name, email: user.email, role: user.role.toLowerCase(), avatar: AVATAR };
+  const profile = { id: user.id, name: user.name, email: user.email, role: user.role.toLowerCase() }; // no stock photo: the app shows the person's initial
   if (user.role === 'CUSTOMER' && user.organization) {
     profile.businessId = user.organization.id;
     profile.businessName = user.organization.businessName;

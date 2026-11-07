@@ -29,8 +29,9 @@ export function RewardsPage() {
     <Page title="Reward points" subtitle="Turn your membership points into free periodic cleaning"
       breadcrumb={[{ label: 'Dashboard', to: '/app' }, { label: 'Rewards' }]} backTo={false}>
       <div className="grid gap-4 md:grid-cols-3">
-        <Kpi label="Points balance" value={`${account.pointsBalance ?? 0} pts`} icon={Award} tone="rewards" sub={pending ? `${pending} pts waiting for approval` : 'Ready to use'} />
-        <Kpi label="Membership length" value={`${account.consecutiveMonths || 0} months`} icon={History} tone="slate"
+        <Kpi label="Points balance" value={`${account.pointsBalance ?? 0} pts`} icon={Award} tone="rewards" sub={pending ? `${pending} pts waiting for approval` : 'Ready to use'}
+          to="#history" title="Jump to your redemption history" />
+        <Kpi label="Membership length" value={`${account.consecutiveMonths || 0} months`} icon={History} tone="slate" to="/app/membership" title="Open your membership"
           sub={s.tenureUnlocked ? 'Redemptions unlocked' : `Redemptions unlock at ${config.tenureMinMonths} months`} />
         <Card title="How it works" icon={Gift} className="md:col-span-1">
           <p className="text-sm text-slate-600">Pick a service, enter how much you need and send it. Points are only taken off when our team approves the booking.</p>
@@ -46,7 +47,7 @@ export function RewardsPage() {
         ))}
       </div>
 
-      <Card title="Redemption history" icon={History} className="mt-6">
+      <Card id="history" title="Redemption history" icon={History} className="mt-6 scroll-mt-4">
         {loading ? <p className="text-sm text-slate-500">Loading…</p> : history.length === 0 ? <EmptyState title="No redemptions yet" /> : (
           <ul className="divide-y divide-slate-100">
             {history.map(r => (
@@ -110,11 +111,11 @@ function RewardCard({ rate, account, locked, onDone }) {
         <span className={`text-xs font-semibold ${tooMany ? 'text-red-600' : 'text-slate-500'}`}>{qty ? `${points} pts${tooMany ? ' (not enough points)' : ''}` : ' '}</span>
         {locked ? <Badge tone="slate"><Lock className="h-3 w-3" />Locked</Badge> : confirming ? (
           <span className="flex gap-1">
-            <Button variant="rewards" size="sm" onClick={send} disabled={busy}>{busy ? 'Sending…' : `Use ${points} pts`}</Button>
-            <Button variant="ghost" size="sm" onClick={() => setConfirming(false)}>Cancel</Button>
+            <Button title="Send this redemption for approval" variant="rewards" size="sm" onClick={send} disabled={busy}>{busy ? 'Sending…' : `Use ${points} pts`}</Button>
+            <Button title="Go back without redeeming" variant="ghost" size="sm" onClick={() => setConfirming(false)}>Cancel</Button>
           </span>
         ) : (
-          <Button variant="rewards" size="sm" disabled={!qty || Number(qty) <= 0 || tooMany || !site} onClick={() => setConfirming(true)}>Redeem</Button>
+          <Button title="Use your points for this service" variant="rewards" size="sm" disabled={!qty || Number(qty) <= 0 || tooMany || !site} onClick={() => setConfirming(true)}>Redeem</Button>
         )}
       </div>
     </div>

@@ -1,10 +1,12 @@
 // W19 Reward redemption approvals, W20 Reports & analytics, W21 Hotline phone booking
 import React, { useEffect, useMemo, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { Gift, CheckCircle2, BarChart3, Clock, Building2, DollarSign, ClipboardList, PhoneCall, Download, Info, Siren } from 'lucide-react';
 import { useAppData } from '@/app/AppData.jsx';
 import { API_BASE } from '@/shared/config/env.js';
-import { Page, Card, Kpi, Button, Tabs, Badge, Field, Alert, EmptyState, StickyActions, InlineConfirm, inputCls, useToast, cx } from '@/shared/ui/index.jsx';
+import { Page, Card, Kpi, Button, Tabs, Badge, Field, Alert, EmptyState, StickyActions, InlineConfirm, inputCls, useToast, cx, useFieldErrors } from '@/shared/ui/index.jsx';
+import { PhoneInput, AddressAutocomplete } from '@/shared/ui/inputs.jsx';
+import { phoneError, personNameError, textError } from '@shared/validation.js';
 import { formatDateTime, isCompleted } from '@/shared/ui/jobs.jsx';
 
 /* ------------------------------------------------------------------ Rewards queue */
@@ -14,7 +16,9 @@ export function RewardsQueuePage() {
   const { loadData } = useAppData();
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState('PENDING_APPROVAL');
+  const [params, setParams] = useSearchParams();
+  const tab = params.get('tab') || 'PENDING_APPROVAL';
+  const setTab = (t) => setParams({ tab: t }, { replace: true });
 
   const load = async () => {
     try { const res = await fetch(`${API_BASE}/redemptions`); const d = await res.json(); if (res.ok && Array.isArray(d)) setItems(d); } catch { /* offline */ }
@@ -39,9 +43,9 @@ export function RewardsQueuePage() {
   return (
     <Page fit title="Reward redemptions" subtitle="Points are only taken from the customer when you approve">
       <div className="grid shrink-0 grid-cols-2 gap-3 md:grid-cols-3">
-        <Kpi label="Waiting" value={items.filter(r => r.status === 'PENDING_APPROVAL').length} icon={Clock} tone="warning" />
-        <Kpi label="Approved this month" value={approvedThisMonth.length} icon={CheckCircle2} tone="success" />
-        <Kpi label="Points used this month" value={approvedThisMonth.reduce((n, r) => n + (r.calculatedPoints || 0), 0)} icon={Gift} tone="rewards" className="col-span-2 md:col-span-1" />
+        <Kpi label="Waiting" value={items.filter(r => r.status === 'PENDING_APPROVAL').length} icon={Clock} tone="warning" to="?tab=PENDING_APPROVAL" title="Show redemptions waiting for your decision" />
+        <Kpi label="Approved this month" value={approvedThisMonth.length} icon={CheckCircle2} tone="success" to="?tab=APPROVED" title="Show approved redemptions" />
+        <Kpi label="Points used this month" value={approvedThisMonth.reduce((n, r) => n + (r.calculatedPoints || 0), 0)} icon={Gift} tone="rewards" className="col-span-2 md:col-span-1" to="?tab=APPROVED" title="Show approved redemptions" />
       </div>
       <Card title="Requests" icon={Gift} className="mt-4 fit:min-h-0 fit:flex-1" bodyClassName="fit:flex-1 fit:overflow-y-auto"
         actions={<Tabs value={tab} onChange={setTab} tabs={[{ key: 'PENDING_APPROVAL', label: 'Waiting' }, { key: 'APPROVED', label: 'Approved' }, { key: 'REJECTED', label: 'Declined' }, { key: 'all', label: 'All' }]} />}>
@@ -56,8 +60,8 @@ export function RewardsQueuePage() {
                 <span className="text-sm font-bold text-purple-700">{r.calculatedPoints} pts</span>
                 {r.status === 'PENDING_APPROVAL' ? (
                   <span className="flex flex-wrap gap-2">
-                    <Button size="sm" variant="success" onClick={() => decide(r, 'APPROVED')}>Approve</Button>
-                    <InlineConfirm label="Decline" message="Decline?" confirmLabel="Decline" onConfirm={() => decide(r, 'REJECTED')} />
+                    <Button size="sm" variant="success" onClick={() => decide(r, 'APPROVED')} title={`Approve and take ${r.calculatedPoints} points from ${r.organization?.businessName}`}>Approve</Button>
+                    <InlineConfirm label="Decline" title="Decline this redemption. No points are taken." message="Decline?" confirmLabel="Decline" onConfirm={() => decide(r, 'REJECTED')} />
                   </span>
                 ) : <Badge tone={r.status === 'APPROVED' ? 'success' : 'danger'}>{r.status === 'APPROVED' ? 'Approved' : 'Declined'}</Badge>}
               </li>
@@ -122,13 +126,13 @@ export function ReportsPage() {
         <select className={cx(inputCls, 'h-10 w-auto py-2')} value={days} onChange={e => setDays(e.target.value)} aria-label="Date range">
           {Object.entries(RANGES).map(([k, v]) => <option key={k} value={k}>{v}</option>)}
         </select>
-        <Button variant="secondary" icon={Download} onClick={exportCsv}>Export CSV</Button>
+        <Button title="Download this report as a spreadsheet (CSV)" variant="secondary" icon={Download} onClick={exportCsv}>Export CSV</Button>
       </>}>
       <div className="grid shrink-0 grid-cols-2 gap-3 lg:grid-cols-4">
-        <Kpi label="SLA met (2–4 h)" value={summary?.slaResponseSuccessRate ?? '—'} icon={CheckCircle2} tone="success" />
-        <Kpi label="Avg. attendance" value={summary?.avgAttendanceTimeMinutes != null ? `${summary.avgAttendanceTimeMinutes} min` : '—'} icon={Clock} tone="brand" />
-        <Kpi label="Active customers" value={summary ? `${summary.activeCustomers} / ${summary.totalCustomers}` : '—'} icon={Building2} tone="slate" />
-        <Kpi label="Revenue this month" value={summary ? `$${Number(summary.totalRevenueMonth || 0).toLocaleString()}` : '—'} icon={DollarSign} tone="rewards" />
+        <Kpi label="SLA met (2–4 h)" value={summary?.slaResponseSuccessRate ?? '—'} icon={CheckCircle2} tone="success" to="/admin/dispatch?status=done" title="Show the completed jobs behind this figure" />
+        <Kpi label="Avg. attendance" value={summary?.avgAttendanceTimeMinutes != null ? `${summary.avgAttendanceTimeMinutes} min` : '—'} icon={Clock} tone="brand" to="/admin/dispatch?status=done" title="Show the completed jobs behind this figure" />
+        <Kpi label="Active customers" value={summary ? `${summary.activeCustomers} / ${summary.totalCustomers}` : '—'} icon={Building2} tone="slate" to="/admin/customers" title="Open the customer list" />
+        <Kpi label="Revenue this month" value={summary ? `$${Number(summary.totalRevenueMonth || 0).toLocaleString()}` : '—'} icon={DollarSign} tone="rewards" to="/admin/customers" title="Open the customers and their plans" />
       </div>
       <div className="mt-4 grid gap-4 lg:grid-cols-[2fr_1fr] fit:min-h-0 fit:flex-1 fit:grid-rows-[minmax(0,1fr)]">
         <Card title={`Call-outs per week (${inRange.length} in range)`} icon={BarChart3} className="fit:min-h-0" bodyClassName="flex-1 flex flex-col">
@@ -184,11 +188,13 @@ export function HotlinePage() {
   const [description, setDescription] = useState('');
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const { errors, check, clear, setErrors } = useFieldErrors();
+  const edit = (setter, field) => (v) => { setter(v); clear(field); };
   const plan = (config.membershipPlans || []).find(p => p.id === org?.membershipPlan);
   const left = plan ? Math.max(0, plan.callouts - (org?.calloutsUsed || 0)) : null;
 
   const pickOrg = (id) => {
-    setOrgId(id);
+    setOrgId(id); setErrors({});
     const o = customers.find(c => c.id === id);
     setCallerName(o?.primaryContactName || ''); setCallerPhone(o?.phoneNumber || '');
     setSiteId(o?.locations?.[0]?.id || ''); setAddress(o?.locations?.[0]?.address || '');
@@ -198,10 +204,13 @@ export function HotlinePage() {
   const submit = async (e) => {
     e.preventDefault();
     setError('');
-    if (callerName.trim().length < 2) return setError('Please enter the caller\'s name.');
-    if (!/^\d{8,12}$/.test(callerPhone.replace(/[\s\-()+]/g, ''))) return setError('Please enter a valid phone number (8 to 12 digits).');
-    if (address.trim().length < 3) return setError('Please enter the site address.');
-    if (description.trim().length < 5) return setError('Please describe the incident (at least 5 characters).');
+    const ok = check({
+      callerName: v => personNameError(v.callerName, { label: 'Caller name' }),
+      callerPhone: v => phoneError(v.callerPhone),
+      address: v => textError(v.address, { label: 'Site address', min: 4 }),
+      description: v => (String(v.description).trim().length < 5 ? 'Describe what happened (at least 5 characters).' : '')
+    }, { callerName, callerPhone, address, description });
+    if (!ok) return;
     setBusy(true);
     try {
       const res = await fetch(`${API_BASE}/jobs`, {
@@ -214,7 +223,13 @@ export function HotlinePage() {
         })
       });
       const data = await res.json();
-      if (!res.ok || !data.id) { setError(data.error || 'The booking could not be created.'); setBusy(false); return; }
+      if (!res.ok || !data.id) {
+        // The API names its own fields; show each message under the matching box here
+        const f = data.fields || {};
+        const mapped = { callerName: f.onsiteContact, callerPhone: f.onsitePhone, address: f.address, description: f.description };
+        if (Object.values(mapped).some(Boolean)) setErrors(mapped); else setError(data.error || 'The booking could not be created.');
+        setBusy(false); return;
+      }
       upsertJob(data);
       notify(`Job ${data.jobNumber} created. Assign a technician now.`);
       navigate(`/admin/jobs/${data.id}`);
@@ -223,7 +238,7 @@ export function HotlinePage() {
 
   return (
     <Page title="Hotline phone booking" subtitle="Log an emergency while the customer is on the phone" breadcrumb={[{ label: 'Dispatch', to: '/admin/dispatch' }, { label: 'Hotline booking' }]} backTo={false}>
-      <form onSubmit={submit} className="grid gap-4 xl:grid-cols-[1fr_320px]">
+      <form onSubmit={submit} noValidate className="grid gap-4 xl:grid-cols-[1fr_320px]">
         <div className="space-y-4">
           <Alert>{error}</Alert>
           <Card title="Customer and site" icon={Building2}>
@@ -234,13 +249,13 @@ export function HotlinePage() {
               <Field label="Site">
                 <select className={inputCls} value={siteId} onChange={e => pickSite(e.target.value)}>{(org?.locations || []).map(l => <option key={l.id} value={l.id}>{l.name}</option>)}</select>
               </Field>
-              <Field label="Site address" required className="md:col-span-2"><input className={inputCls} value={address} onChange={e => setAddress(e.target.value)} /></Field>
+              <Field label="Site address" required className="md:col-span-2" as="div" error={errors.address}><AddressAutocomplete value={address} onChange={edit(setAddress, 'address')} onSelect={a => edit(setAddress, 'address')(a.address || a.street)} /></Field>
             </div>
           </Card>
           <Card title="Caller" icon={PhoneCall}>
             <div className="grid gap-3 md:grid-cols-2">
-              <Field label="Caller name" required><input className={inputCls} value={callerName} onChange={e => setCallerName(e.target.value)} /></Field>
-              <Field label="Caller phone" required><input type="tel" className={inputCls} value={callerPhone} onChange={e => setCallerPhone(e.target.value)} /></Field>
+              <Field label="Caller name" required error={errors.callerName}><input className={inputCls} value={callerName} onChange={e => edit(setCallerName, 'callerName')(e.target.value)} /></Field>
+              <Field label="Caller phone" required error={errors.callerPhone}><PhoneInput value={callerPhone} onChange={edit(setCallerPhone, 'callerPhone')} /></Field>
             </div>
           </Card>
           <Card title="Incident" icon={Siren}>
@@ -248,10 +263,10 @@ export function HotlinePage() {
               <Field label="Incident type" required>
                 <select className={inputCls} value={category} onChange={e => setCategory(e.target.value)}>{(config.incidentCategories || []).map(c => <option key={c}>{c}</option>)}</select>
               </Field>
-              <Field label="What happened" required><textarea rows={3} className={inputCls} value={description} onChange={e => setDescription(e.target.value)} /></Field>
+              <Field label="What happened" required error={errors.description}><textarea rows={3} className={inputCls} value={description} onChange={e => edit(setDescription, 'description')(e.target.value)} /></Field>
             </div>
           </Card>
-          <StickyActions className="xl:hidden"><Button type="submit" variant="emergency" disabled={busy}>{busy ? 'Creating…' : 'Create job'}</Button></StickyActions>
+          <StickyActions className="xl:hidden"><Button type="submit" variant="emergency" disabled={busy} title="Create the emergency job, then assign a technician">{busy ? 'Creating…' : 'Create job'}</Button></StickyActions>
         </div>
         <aside className="space-y-4">
           <Card title="Customer snapshot" icon={Info}>
@@ -263,7 +278,7 @@ export function HotlinePage() {
               </dl>
             ) : <p className="text-sm text-slate-500">Choose a customer.</p>}
           </Card>
-          <Button type="submit" variant="emergency" size="lg" block disabled={busy} className="hidden xl:inline-flex">{busy ? 'Creating…' : 'Create job & go to dispatch'}</Button>
+          <Button type="submit" variant="emergency" size="lg" block disabled={busy} className="hidden xl:inline-flex" title="Create the emergency job, then assign a technician">{busy ? 'Creating…' : 'Create job & go to dispatch'}</Button>
         </aside>
       </form>
     </Page>

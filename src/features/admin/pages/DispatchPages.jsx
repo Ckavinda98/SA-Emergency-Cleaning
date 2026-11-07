@@ -17,11 +17,15 @@ export function TechStatusBadge({ status }) {
   return <Badge tone="slate">Off duty</Badge>;
 }
 
+// Filters opened from the tiles that have no tab of their own
+const EXTRA_FILTERS = { unassigned: 'Unassigned', travelling: 'On the way', onsite: 'On site' };
+
 export function DispatchPage() {
   const { jobs, technicians } = useAppData();
   const [params, setParams] = useSearchParams();
   const filter = params.get('status') || 'open';
-  const [q, setQ] = useState('');
+  const [q, setQ] = useState(params.get('q') || '');
+  const tile = (status) => `/admin/dispatch?status=${status}`;
 
   const counts = {
     newJobs: jobs.filter(j => isNewJob(j.status)).length,
@@ -36,6 +40,9 @@ export function DispatchPage() {
     if (filter === 'new' && !isNewJob(j.status)) return false;
     if (filter === 'active' && !ACTIVE.includes(j.status)) return false;
     if (filter === 'done' && !isCompleted(j.status)) return false;
+    if (filter === 'unassigned' && (isFinished(j.status) || hasTech(j))) return false;
+    if (filter === 'travelling' && j.status !== 'TRAVELLING') return false;
+    if (filter === 'onsite' && !['ARRIVED', 'IN_PROGRESS'].includes(j.status)) return false;
     if (q && !`${j.jobNumber} ${j.customerName} ${j.locationName} ${j.category} ${j.technicianName}`.toLowerCase().includes(q.toLowerCase())) return false;
     return true;
   }).sort((a, b) => (hasTech(a) - hasTech(b)) || new Date(b.submittedAt || 0) - new Date(a.submittedAt || 0)), [jobs, filter, q]);
@@ -46,21 +53,22 @@ export function DispatchPage() {
   return (
     <Page fit title="Dispatch desk" subtitle="Live emergency requests across all customers"
       actions={<>
-        <Button to="/admin/hotline" variant="emergency" icon={Phone}>Hotline booking</Button>
-        <Button to="/admin/map" variant="secondary" icon={MapIcon}>Live map</Button>
+        <Button to="/admin/hotline" variant="emergency" icon={Phone} title="Log an emergency for a customer who is on the phone">Hotline booking</Button>
+        <Button to="/admin/map" variant="secondary" icon={MapIcon} title="See where every technician and job is on the map">Live map</Button>
       </>}>
       <div className="grid shrink-0 grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
-        <Kpi label="New" value={counts.newJobs} icon={Radio} tone="brand" />
-        <Kpi label="Unassigned" value={counts.unassigned} icon={AlertTriangle} tone={counts.unassigned ? 'danger' : 'slate'} />
-        <Kpi label="On the way" value={counts.enRoute} icon={Truck} tone="brand" className="hidden sm:block" />
-        <Kpi label="On site" value={counts.onSite} icon={MapPin} tone="warning" className="hidden xl:block" />
-        <Kpi label="Completed" value={counts.done} icon={CheckCircle2} tone="success" className="hidden xl:block" />
+        <Kpi label="New" value={counts.newJobs} icon={Radio} tone="brand" to={tile('new')} title="Show new requests waiting for dispatch" />
+        <Kpi label="Unassigned" value={counts.unassigned} icon={AlertTriangle} tone={counts.unassigned ? 'danger' : 'slate'} to={tile('unassigned')} title="Show open jobs with no technician yet" />
+        <Kpi label="On the way" value={counts.enRoute} icon={Truck} tone="brand" className="hidden sm:block" to={tile('travelling')} title="Show jobs where the technician is travelling" />
+        <Kpi label="On site" value={counts.onSite} icon={MapPin} tone="warning" className="hidden xl:block" to={tile('onsite')} title="Show jobs where the technician is on site" />
+        <Kpi label="Completed" value={counts.done} icon={CheckCircle2} tone="success" className="hidden xl:block" to={tile('done')} title="Show completed jobs" />
       </div>
       <div className="mt-4 grid gap-4 xl:grid-cols-[1fr_320px] fit:min-h-0 fit:flex-1 fit:grid-rows-[minmax(0,1fr)]">
         <Card title="Job queue" icon={Radio} className="fit:min-h-0" bodyClassName="fit:flex-1 fit:overflow-y-auto"
           actions={<>
             <Tabs value={filter} onChange={v => setParams({ status: v })} tabs={[
-              { key: 'open', label: 'Open' }, { key: 'new', label: 'New', count: counts.newJobs }, { key: 'active', label: 'Active' }, { key: 'done', label: 'Done', count: counts.done }, { key: 'all', label: 'All', count: jobs.length }
+              { key: 'open', label: 'Open' }, { key: 'new', label: 'New', count: counts.newJobs }, { key: 'active', label: 'Active' }, { key: 'done', label: 'Done', count: counts.done }, { key: 'all', label: 'All', count: jobs.length },
+              ...(EXTRA_FILTERS[filter] ? [{ key: filter, label: EXTRA_FILTERS[filter] }] : [])
             ]} />
             <label className="relative w-full sm:w-56">
               <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-slate-400" />
@@ -71,7 +79,7 @@ export function DispatchPage() {
         </Card>
         <div className="flex min-h-0 flex-col gap-4">
           <Card title={live ? `Live: ${String(live.technicianName).replace(/\s*\(.*\)$/, '')}` : 'Live map'} icon={MapIcon} className="min-h-[220px] fit:flex-1" bodyClassName="flex-1 flex flex-col"
-            actions={<Button to={live ? `/admin/map?job=${live.id}` : '/admin/map'} variant="ghost" size="sm">Open</Button>}>
+            actions={<Button to={live ? `/admin/map?job=${live.id}` : '/admin/map'} variant="ghost" size="sm" title="Open the full live map">Open</Button>}>
             <MapEmbed address={live?.address || 'Adelaide SA'} zoom={live ? 14 : 11} className="min-h-[160px] flex-1" />
           </Card>
           <Card title={`Available technicians (${available.length})`} icon={Users} className="fit:min-h-0 fit:max-h-[45%]" bodyClassName="fit:overflow-y-auto">
@@ -144,8 +152,8 @@ export function AdminJobPage() {
       breadcrumb={[{ label: 'Dispatch', to: '/admin/dispatch' }, { label: job.jobNumber }]}
       actions={<>
         <StatusChip status={job.status} />
-        {isLive(job.status) && <Button to={`/admin/map?job=${job.id}`} variant="secondary" icon={MapIcon}>Track live</Button>}
-        {isCompleted(job.status) && <Button to={`/admin/jobs/${job.id}/report`} icon={FileText}>Service report</Button>}
+        {isLive(job.status) && <Button title="Follow the technician's location on the map" to={`/admin/map?job=${job.id}`} variant="secondary" icon={MapIcon}>Track live</Button>}
+        {isCompleted(job.status) && <Button title="Open the service report for this job" to={`/admin/jobs/${job.id}/report`} icon={FileText}>Service report</Button>}
       </>}>
       <div className="grid gap-4 xl:grid-cols-[1fr_360px]">
         <div className="order-2 min-w-0 space-y-4 xl:order-1">
@@ -200,20 +208,20 @@ export function AdminJobPage() {
                 <span className="text-slate-500">Job status</span><StatusChip status={job.status} />
               </div>
               <div className="mt-4 grid gap-2">
-                <Button block icon={ArrowLeft} to="/admin/dispatch">Back to dispatch list</Button>
-                {nextUnassigned && <Button block variant="secondary" to={`/admin/jobs/${nextUnassigned.id}`}>Next unassigned job ({nextUnassigned.jobNumber})</Button>}
-                {!isFinished(job.status) && <Button block variant="ghost" icon={RefreshCw} onClick={() => { setPicking(true); setJustAssigned(null); }}>Change technician or status</Button>}
+                <Button title="Go back to the job queue" block icon={ArrowLeft} to="/admin/dispatch">Back to dispatch list</Button>
+                {nextUnassigned && <Button title="Open the next job that still needs a technician" block variant="secondary" to={`/admin/jobs/${nextUnassigned.id}`}>Next unassigned job ({nextUnassigned.jobNumber})</Button>}
+                {!isFinished(job.status) && <Button title="Pick a different technician or change the job status" block variant="ghost" icon={RefreshCw} onClick={() => { setPicking(true); setJustAssigned(null); }}>Change technician or status</Button>}
               </div>
             </Card>
           ) : (
             <Card title={current ? 'Change technician' : 'Assign technician'} icon={Users}
-              actions={current && <Button size="sm" variant="ghost" onClick={() => { setPicking(false); setTech(null); setStatus(null); }}>Cancel</Button>}>
+              actions={current && <Button title="Keep the current technician" size="sm" variant="ghost" onClick={() => { setPicking(false); setTech(null); setStatus(null); }}>Cancel</Button>}>
               {isFinished(job.status) ? <p className="text-sm text-slate-500">This job is finished.</p> : (
                 <>
                   <ul className="max-h-72 space-y-2 overflow-y-auto pr-1">
                     {sorted.map(t => (
                       <li key={t.id}>
-                        <button type="button" onClick={() => setTech(t.name)} className={cx('flex w-full items-center gap-2 rounded-xl border-2 p-2 text-left cursor-pointer', chosenTech === t.name ? 'border-brand bg-sky-50' : 'border-slate-200 hover:border-slate-300')}>
+                        <button title="Choose this technician" type="button" onClick={() => setTech(t.name)} className={cx('flex w-full items-center gap-2 rounded-xl border-2 p-2 text-left cursor-pointer', chosenTech === t.name ? 'border-brand bg-sky-50' : 'border-slate-200 hover:border-slate-300')}>
                           <Avatar tech={t} />
                           <div className="min-w-0 flex-1"><div className="truncate text-sm font-semibold text-slate-900">{t.name}</div><div className="text-xs text-slate-500">{t.phone} · ★ {t.rating || 5.0}</div></div>
                           {t.name === current ? <Badge tone="brand">Current</Badge> : <TechStatusBadge status={t.status} />}
@@ -229,7 +237,7 @@ export function AdminJobPage() {
                       <option value="MORE_INFO_REQUIRED">More info needed (pauses SLA)</option>
                     </select>
                   </Field>
-                  <Button block className="mt-3" disabled={busy || !chosenTech || unchanged} onClick={assign} icon={CheckCircle2}>
+                  <Button title="Save the technician and status. The technician is told straight away." block className="mt-3" disabled={busy || !chosenTech || unchanged} onClick={assign} icon={CheckCircle2}>
                     {busy ? 'Assigning…' : unchanged ? 'No changes to save' : current ? `Reassign to ${chosenTech}` : `Assign ${chosenTech || ''} & dispatch`}
                   </Button>
                 </>
@@ -259,7 +267,7 @@ export function LiveMapPage() {
             <ul className="space-y-2">
               {liveJobs.map(j => (
                 <li key={j.id}>
-                  <button onClick={() => setParams({ job: j.id })} className={cx('w-full rounded-xl border-2 p-2.5 text-left cursor-pointer', selected?.id === j.id ? 'border-brand bg-sky-50' : 'border-slate-200 hover:border-slate-300')}>
+                  <button title="Show this job on the map" onClick={() => setParams({ job: j.id })} className={cx('w-full rounded-xl border-2 p-2.5 text-left cursor-pointer', selected?.id === j.id ? 'border-brand bg-sky-50' : 'border-slate-200 hover:border-slate-300')}>
                     <div className="flex items-center justify-between gap-2"><span className="text-sm font-semibold text-slate-900">{j.technicianName || 'Unassigned'}</span><StatusChip status={j.status} /></div>
                     <div className="mt-0.5 truncate text-xs text-slate-500">{j.jobNumber} · {j.customerName}</div>
                   </button>
@@ -280,8 +288,8 @@ export function LiveMapPage() {
                 <InfoRow label="Distance">{selected.status === 'TRAVELLING' ? '1.4 km' : 'On site'}</InfoRow>
                 <InfoRow label="ETA">{selected.status === 'TRAVELLING' ? '14 min' : 'Arrived'}</InfoRow>
                 <div className="col-span-2 flex gap-2 md:col-span-1 md:justify-end">
-                  <Button size="sm" variant="success" icon={Phone} href={`tel:${tech?.phone || ''}`}>Call</Button>
-                  <Button size="sm" variant="secondary" onClick={() => navigate(`/admin/jobs/${selected.id}`)}>Job</Button>
+                  <Button title="Call the technician" size="sm" variant="success" icon={Phone} href={`tel:${tech?.phone || ''}`}>Call</Button>
+                  <Button title="Open the job" size="sm" variant="secondary" onClick={() => navigate(`/admin/jobs/${selected.id}`)}>Job</Button>
                 </div>
               </div>
             </Card>

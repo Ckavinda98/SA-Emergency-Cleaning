@@ -4,6 +4,9 @@ import {
   MapPin, AlertTriangle, Award, CheckCircle2, Building, AlertCircle, X, RefreshCw, DollarSign, ChevronRight, FileCheck
 } from 'lucide-react';
 import { API_BASE } from '@/shared/config/env.js';
+import { Field, inputCls, useFieldErrors } from '@/shared/ui/index.jsx';
+import { PhoneInput, PasswordInput, AddressAutocomplete } from '@/shared/ui/inputs.jsx';
+import { phoneError, emailError, passwordError, confirmPasswordError, personNameError, textError, abnError, bsbError, accountNumberError, cardNumberError, cardExpiryError, cvcError } from '@shared/validation.js';
 
 /* =========================================================================
    COMPANY REGISTRATION WIZARD (ADELAIDE ONLY), shown as a page at /register and /admin/customers/new
@@ -65,65 +68,60 @@ export function CompanyRegistrationWizard({ onClose, onRegisterSuccess, isAdminM
     const rnd = new Uint32Array(10);
     window.crypto.getRandomValues(rnd);
     rnd.forEach(n => { out += chars[n % chars.length]; });
-    return `${out}!7`;
+    return `${out}Ak7!`; // always has upper, lower, number and symbol
   });
   const [confirmPassword, setConfirmPassword] = useState('');
   
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState('');
 
-  const validateAdelaideLocation = () => {
-    setLocationError('');
-    const fullAddress = `${streetAddress} ${selectedSuburb}`.toLowerCase();
-    if (!streetAddress || streetAddress.trim().length < 4) {
-      setLocationError('Please enter a valid street address in Adelaide (at least 4 characters).');
-      return false;
+  const { errors, check, clear, set: setFieldError } = useFieldErrors();
+  // Wraps a setter so editing a field clears its message
+  const edit = (setter, field) => (v) => { setter(v); clear(field); };
+
+  const inServiceArea = (postcode) => { const n = Number(postcode); return n >= 5000 && n <= 5199; };
+
+  // A picked Google suggestion fills the street and the suburb / postcode
+  const onAddressPicked = (a) => {
+    if (a.postcode && !inServiceArea(a.postcode)) {
+      setFieldError('streetAddress', `${a.suburb || 'This address'} ${a.postcode} is outside our service area (Adelaide postcodes 5000–5199).`);
+      return;
     }
-    if (!fullAddress.includes('adelaide') && !fullAddress.includes('sa') && !fullAddress.includes('5')) {
-      setLocationError('Location Error: Emergency Cleaning Membership is strictly restricted exclusively to Adelaide, South Australia locations (Postcodes 5000-5199).');
-      return false;
-    }
-    return true;
+    if (a.suburb && a.postcode) setSelectedSuburb(`${a.suburb} (${a.postcode})`);
+    clear('streetAddress');
   };
 
   const validateStep1 = () => {
     setSubmitError('');
-    if (!businessName || businessName.trim().length < 2) {
-      setSubmitError('Validation Error: Business/Company Name is required (at least 2 characters).');
-      return false;
-    }
-    const cleanAbn = abn.replace(/\s/g, '');
-    if (!cleanAbn || !/^\d{11}$/.test(cleanAbn)) {
-      setSubmitError('Validation Error: Australian Business Number (ABN) must be exactly 11 digits.');
-      return false;
-    }
-    if (!primaryContactName || primaryContactName.trim().length < 2) {
-      setSubmitError('Validation Error: Primary Contact Representative Name is required.');
-      return false;
-    }
-    const cleanPhone = phoneNumber.replace(/[\s\-\(\)\+]/g, '');
-    if (!cleanPhone || !/^\d{8,12}$/.test(cleanPhone)) {
-      setSubmitError('Validation Error: Please enter a valid phone number (8 to 12 digits).');
-      return false;
-    }
-    const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-    if (!email || !emailRegex.test(email.trim())) {
-      setSubmitError('Validation Error: Please enter a valid business email address.');
-      return false;
-    }
-    if (!isAdminMode) {
-      if (!adminPassword || adminPassword.length < 8) {
-        setSubmitError('Validation Error: Password must be at least 8 characters.');
-        return false;
-      }
-      if (adminPassword !== confirmPassword) {
-        setSubmitError('Validation Error: The two passwords do not match.');
-        return false;
-      }
-    }
-    if (!validateAdelaideLocation()) return false;
-    return true;
+    setLocationError('');
+    const values = { businessName, abn, primaryContactName, phoneNumber, email, adminPassword, confirmPassword, locationName, streetAddress };
+    return check({
+      businessName: v => textError(v.businessName, { label: 'Company name' }),
+      abn: v => abnError(v.abn, { required: true }),
+      primaryContactName: v => personNameError(v.primaryContactName, { label: 'Contact name' }),
+      phoneNumber: v => phoneError(v.phoneNumber),
+      email: v => emailError(v.email),
+      ...(isAdminMode ? {} : {
+        adminPassword: v => passwordError(v.adminPassword),
+        confirmPassword: v => confirmPasswordError(v.adminPassword, v.confirmPassword)
+      }),
+      locationName: v => textError(v.locationName, { label: 'Site name', required: false }),
+      streetAddress: v => (String(v.streetAddress).trim().length < 4 ? 'Enter the street address, e.g. 120 Grenfell Street.' : /\p{L}/u.test(v.streetAddress) ? '' : 'The street address must include the street name.')
+    }, values);
   };
+
+  // Payment details: card fields for a card, bank fields for direct debit
+  const validatePayment = () => check(paymentType === 'CREDIT_CARD' ? {
+    cardNumber: v => cardNumberError(v.cardNumber),
+    cardExpiry: v => cardExpiryError(v.cardExpiry),
+    cardCvc: v => cvcError(v.cardCvc)
+  } : {
+    bsb: v => bsbError(v.bsb),
+    accountNumber: v => accountNumberError(v.accountNumber),
+    accountName: v => textError(v.accountName, { label: 'Account holder name' })
+  }, { cardNumber, cardExpiry, cardCvc, bsb, accountNumber, accountName: accountName || businessName });
+
+  const validateCredentials = () => check({ adminPassword: v => passwordError(v.adminPassword) }, { adminPassword });
 
   const handleNextStep = (e) => {
     e.preventDefault();
@@ -140,6 +138,7 @@ export function CompanyRegistrationWizard({ onClose, onRegisterSuccess, isAdminM
     } else if (step === 3) {
       setStep(4);
     } else if (step === 4) {
+      if (!validatePayment()) return;
       if (isAdminMode) {
         setStep(5); // Admin step for setting company credentials
       } else {
@@ -155,7 +154,7 @@ export function CompanyRegistrationWizard({ onClose, onRegisterSuccess, isAdminM
     const fullAddressString = `${streetAddress}, ${selectedSuburb}, SA`;
     const payload = {
       businessName,
-      abn: abn || '48 123 456 789',
+      abn: abn.replace(/\s/g, ''),
       primaryContactName,
       phoneNumber,
       email,
@@ -229,160 +228,72 @@ export function CompanyRegistrationWizard({ onClose, onRegisterSuccess, isAdminM
 
         {/* STEP 1: COMPANY NAME, ADDRESS & ADELAIDE LOCATION */}
         {step === 1 && (
-          <form onSubmit={handleNextStep} className="space-y-4">
+          <form onSubmit={handleNextStep} noValidate className="space-y-4">
             <div className="bg-blue-50 border border-blue-200 p-3 rounded-xl flex items-center gap-2 text-blue-900 font-medium">
               <MapPin className="w-4 h-4 text-[#0286cd] shrink-0" />
               <span>Note: Service coverage is restricted exclusively to <strong>Adelaide, South Australia</strong> commercial locations.</span>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div>
-                <label className="block text-slate-700 font-bold mb-1">Company / Business Name *</label>
-                <input
-                  type="text"
-                  required
-                  value={businessName}
-                  onChange={(e) => setBusinessName(e.target.value)}
-                  placeholder="e.g. Adelaide Innovation Tech Hub Pty Ltd"
-                  className="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-slate-900 font-medium focus:border-[#0286cd] focus:outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block text-slate-700 font-bold mb-1">Australian Business Number (ABN)</label>
-                <input
-                  type="text"
-                  value={abn}
-                  onChange={(e) => setAbn(e.target.value)}
-                  placeholder="48 123 456 789"
-                  className="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-slate-900 font-medium focus:border-[#0286cd] focus:outline-none"
-                />
-              </div>
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <Field label="Company / business name" required error={errors.businessName}>
+                <input className={inputCls} value={businessName} onChange={e => edit(setBusinessName, 'businessName')(e.target.value)} placeholder="e.g. Adelaide Innovation Tech Hub Pty Ltd" autoComplete="organization" />
+              </Field>
+              <Field label="Australian Business Number (ABN)" required error={errors.abn} hint="11 digits">
+                <input className={inputCls} value={abn} inputMode="numeric" maxLength={14} onChange={e => edit(setAbn, 'abn')(e.target.value.replace(/[^\d\s]/g, ''))} placeholder="48 123 456 789" />
+              </Field>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div>
-                <label className="block text-slate-700 font-bold mb-1">Primary Contact Name *</label>
-                <input
-                  type="text"
-                  required
-                  value={primaryContactName}
-                  onChange={(e) => setPrimaryContactName(e.target.value)}
-                  placeholder="Sarah Jenkins"
-                  className="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-slate-900 font-medium focus:border-[#0286cd] focus:outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block text-slate-700 font-bold mb-1">Phone Number *</label>
-                <input
-                  type="text"
-                  required
-                  value={phoneNumber}
-                  onChange={(e) => setPhoneNumber(e.target.value)}
-                  placeholder="0412 345 678"
-                  className="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-slate-900 font-medium focus:border-[#0286cd] focus:outline-none"
-                />
-              </div>
-
-              <div>
-                <label className="block text-slate-700 font-bold mb-1">Company Email *</label>
-                <input
-                  type="email"
-                  required
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  placeholder="contact@company.com.au"
-                  className="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-slate-900 font-medium focus:border-[#0286cd] focus:outline-none"
-                />
-              </div>
-
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
+              <Field label="Primary contact name" required error={errors.primaryContactName}>
+                <input className={inputCls} value={primaryContactName} onChange={e => edit(setPrimaryContactName, 'primaryContactName')(e.target.value)} placeholder="Sarah Jenkins" autoComplete="name" />
+              </Field>
+              <Field label="Phone number" required error={errors.phoneNumber} hint="Mobile or landline, e.g. 0412 345 678">
+                <PhoneInput value={phoneNumber} onChange={edit(setPhoneNumber, 'phoneNumber')} aria-invalid={Boolean(errors.phoneNumber)} className={errors.phoneNumber ? '!border-red-400 !bg-red-50/40' : ''} />
+              </Field>
+              <Field label="Company email" required error={errors.email}>
+                <input type="email" className={inputCls} value={email} onChange={e => edit(setEmail, 'email')(e.target.value)} placeholder="contact@company.com.au" autoComplete="email" />
+              </Field>
               {!isAdminMode && (
                 <>
-                  <div>
-                    <label className="block text-slate-700 font-bold mb-1">Login Password * (at least 8 characters)</label>
-                    <input
-                      type="password"
-                      required
-                      value={adminPassword}
-                      onChange={(e) => setAdminPassword(e.target.value)}
-                      autoComplete="new-password"
-                      className="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-slate-900 font-medium focus:border-[#0286cd] focus:outline-none"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-slate-700 font-bold mb-1">Confirm Password *</label>
-                    <input
-                      type="password"
-                      required
-                      value={confirmPassword}
-                      onChange={(e) => setConfirmPassword(e.target.value)}
-                      autoComplete="new-password"
-                      className="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-slate-900 font-medium focus:border-[#0286cd] focus:outline-none"
-                    />
-                  </div>
+                  <Field as="div" label="Login password" required error={errors.adminPassword}>
+                    <PasswordInput value={adminPassword} onChange={edit(setAdminPassword, 'adminPassword')} showChecklist aria-invalid={Boolean(errors.adminPassword)} className={errors.adminPassword ? '!border-red-400 !bg-red-50/40' : ''} />
+                  </Field>
+                  <Field as="div" label="Confirm password" required error={errors.confirmPassword}>
+                    <PasswordInput value={confirmPassword} onChange={edit(setConfirmPassword, 'confirmPassword')} aria-invalid={Boolean(errors.confirmPassword)} className={errors.confirmPassword ? '!border-red-400 !bg-red-50/40' : ''} />
+                  </Field>
                 </>
               )}
             </div>
 
-            {/* ADELAIDE LOCATION SELECTION */}
-            <div className="pt-2 border-t border-slate-200">
-              <h4 className="font-bold text-slate-900 text-sm mb-2 flex items-center gap-1.5">
-                <MapPin className="w-4 h-4 text-[#0286cd]" />
-                Primary Site Location (Adelaide, Australia Only)
+            {/* ADELAIDE LOCATION */}
+            <div className="border-t border-slate-200 pt-2">
+              <h4 className="mb-2 flex items-center gap-1.5 text-sm font-bold text-slate-900">
+                <MapPin className="h-4 w-4 text-[#0286cd]" />
+                Primary site location (Adelaide only)
               </h4>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div>
-                  <label className="block text-slate-700 font-bold mb-1">Site / Facility Name</label>
-                  <input
-                    type="text"
-                    value={locationName}
-                    onChange={(e) => setLocationName(e.target.value)}
-                    placeholder="Adelaide Headquarters"
-                    className="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-slate-900 font-medium focus:border-[#0286cd] focus:outline-none"
-                  />
-                </div>
-
-                <div>
-                  <label className="block text-slate-700 font-bold mb-1">Select Adelaide Suburb & Postcode *</label>
-                  <select
-                    value={selectedSuburb}
-                    onChange={(e) => setSelectedSuburb(e.target.value)}
-                    className="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-slate-900 font-bold focus:border-[#0286cd] focus:outline-none text-[#0286cd]"
-                  >
-                    {ADELAIDE_LOCATIONS.map((loc, i) => (
-                      <option key={i} value={`${loc.suburb} (${loc.postcode})`}>
-                        📍 {loc.suburb}, SA {loc.postcode} (Adelaide)
-                      </option>
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <Field label="Site / facility name" error={errors.locationName}>
+                  <input className={inputCls} value={locationName} onChange={e => edit(setLocationName, 'locationName')(e.target.value)} placeholder="Adelaide Headquarters" />
+                </Field>
+                <Field label="Suburb and postcode" required hint="Filled in when you pick an address below">
+                  <select value={selectedSuburb} onChange={e => setSelectedSuburb(e.target.value)} className={inputCls}>
+                    {[...ADELAIDE_LOCATIONS.map(l => `${l.suburb} (${l.postcode})`), ...(ADELAIDE_LOCATIONS.some(l => `${l.suburb} (${l.postcode})` === selectedSuburb) ? [] : [selectedSuburb])].map(v => (
+                      <option key={v} value={v}>📍 {v.replace(/ \((\d+)\)$/, ', SA $1')}</option>
                     ))}
                   </select>
-                </div>
+                </Field>
               </div>
-
-              <div className="mt-3">
-                <label className="block text-slate-700 font-bold mb-1">Street Address in Adelaide *</label>
-                <input
-                  type="text"
-                  required
-                  value={streetAddress}
-                  onChange={(e) => setStreetAddress(e.target.value)}
-                  placeholder="e.g. 120 Grenfell Street, Adelaide SA 5000"
-                  className="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-slate-900 font-medium focus:border-[#0286cd] focus:outline-none"
-                />
-              </div>
-
-              {locationError && (
-                <div className="mt-2 p-3 bg-red-50 border border-red-200 text-red-700 rounded-xl font-semibold flex items-center gap-2">
-                  <AlertTriangle className="w-4 h-4 text-red-600 shrink-0" />
-                  <span>{locationError}</span>
-                </div>
-              )}
+              <Field as="div" label="Street address" required error={errors.streetAddress || locationError} className="mt-3"
+                hint="Start typing and pick your address from the list">
+                <AddressAutocomplete value={streetAddress} onChange={edit(setStreetAddress, 'streetAddress')} onSelect={onAddressPicked}
+                  placeholder="e.g. 120 Grenfell Street" aria-invalid={Boolean(errors.streetAddress)} className={errors.streetAddress ? '!border-red-400 !bg-red-50/40' : ''} />
+              </Field>
             </div>
 
             <div className="pt-4 flex justify-end gap-3">
               <button
                 type="button"
+                title="Leave registration without saving"
                 onClick={onClose}
                 className="px-5 py-3 rounded-xl border border-slate-300 font-bold text-slate-600 hover:bg-slate-50 cursor-pointer"
               >
@@ -390,6 +301,7 @@ export function CompanyRegistrationWizard({ onClose, onRegisterSuccess, isAdminM
               </button>
               <button
                 type="submit"
+                title="Check these details and go to the next step"
                 className="px-6 py-3 rounded-xl bg-[#0286cd] hover:bg-[#026fa8] text-white font-extrabold flex items-center gap-2 shadow-md cursor-pointer"
               >
                 <span>Continue to Terms & Conditions</span>
@@ -436,6 +348,7 @@ export function CompanyRegistrationWizard({ onClose, onRegisterSuccess, isAdminM
             <div className="pt-4 flex justify-between gap-3">
               <button
                 type="button"
+                title="Go back to the company details"
                 onClick={() => setStep(1)}
                 className="px-5 py-3 rounded-xl border border-slate-300 font-bold text-slate-600 hover:bg-slate-50 cursor-pointer"
               >
@@ -443,6 +356,7 @@ export function CompanyRegistrationWizard({ onClose, onRegisterSuccess, isAdminM
               </button>
               <button
                 type="button"
+                title="Accept the service agreement and choose a plan"
                 disabled={!agreedToTerms}
                 onClick={() => setStep(3)}
                 className={`px-6 py-3 rounded-xl font-extrabold flex items-center gap-2 shadow-md cursor-pointer ${
@@ -529,6 +443,7 @@ export function CompanyRegistrationWizard({ onClose, onRegisterSuccess, isAdminM
             <div className="pt-4 flex justify-between gap-3">
               <button
                 type="button"
+                title="Go back to the service agreement"
                 onClick={() => setStep(2)}
                 className="px-5 py-3 rounded-xl border border-slate-300 font-bold text-slate-600 hover:bg-slate-50 cursor-pointer"
               >
@@ -536,6 +451,7 @@ export function CompanyRegistrationWizard({ onClose, onRegisterSuccess, isAdminM
               </button>
               <button
                 type="button"
+                title="Use this plan and go to payment"
                 onClick={() => setStep(4)}
                 className="px-6 py-3 rounded-xl bg-[#0286cd] hover:bg-[#026fa8] text-white font-extrabold flex items-center gap-2 shadow-md cursor-pointer"
               >
@@ -558,6 +474,7 @@ export function CompanyRegistrationWizard({ onClose, onRegisterSuccess, isAdminM
             <div className="grid grid-cols-2 gap-3">
               <button
                 type="button"
+                title="Pay each month from a bank account"
                 onClick={() => setPaymentType('DIRECT_DEBIT')}
                 className={`p-3.5 rounded-xl border-2 font-extrabold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer ${
                   paymentType === 'DIRECT_DEBIT'
@@ -571,6 +488,7 @@ export function CompanyRegistrationWizard({ onClose, onRegisterSuccess, isAdminM
 
               <button
                 type="button"
+                title="Pay each month by credit or debit card"
                 onClick={() => setPaymentType('CREDIT_CARD')}
                 className={`p-3.5 rounded-xl border-2 font-extrabold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer ${
                   paymentType === 'CREDIT_CARD'
@@ -590,37 +508,21 @@ export function CompanyRegistrationWizard({ onClose, onRegisterSuccess, isAdminM
                   PayTo Direct Debit Authorization
                 </span>
                 <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-slate-700 font-bold mb-1">BSB Number</label>
-                    <input
-                      type="text"
-                      value={bsb}
-                      onChange={(e) => setBsb(e.target.value)}
-                      placeholder="105-000"
-                      className="w-full bg-white border border-slate-300 rounded-xl p-2.5 text-slate-900 font-mono font-bold"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-slate-700 font-bold mb-1">Account Number</label>
-                    <input
-                      type="text"
-                      value={accountNumber}
-                      onChange={(e) => setAccountNumber(e.target.value)}
-                      placeholder="12345678"
-                      className="w-full bg-white border border-slate-300 rounded-xl p-2.5 text-slate-900 font-mono font-bold"
-                    />
-                  </div>
+                  <Field label="BSB number" required error={errors.bsb}>
+                    <input type="text" inputMode="numeric" maxLength={7} value={bsb} placeholder="105-000"
+                      onChange={(e) => edit(setBsb, 'bsb')(e.target.value.replace(/[^\d-]/g, ''))}
+                      className={`${inputCls} font-mono font-bold`} />
+                  </Field>
+                  <Field label="Account number" required error={errors.accountNumber}>
+                    <input type="text" inputMode="numeric" maxLength={10} value={accountNumber} placeholder="12345678"
+                      onChange={(e) => edit(setAccountNumber, 'accountNumber')(e.target.value.replace(/[^\d]/g, ''))}
+                      className={`${inputCls} font-mono font-bold`} />
+                  </Field>
                 </div>
-                <div>
-                  <label className="block text-slate-700 font-bold mb-1">Account Holder Name</label>
-                  <input
-                    type="text"
-                    value={accountName || businessName}
-                    onChange={(e) => setAccountName(e.target.value)}
-                    placeholder="Company Account Name..."
-                    className="w-full bg-white border border-slate-300 rounded-xl p-2.5 text-slate-900 font-medium"
-                  />
-                </div>
+                <Field label="Account holder name" required error={errors.accountName}>
+                  <input type="text" value={accountName || businessName} placeholder="Company account name"
+                    onChange={(e) => edit(setAccountName, 'accountName')(e.target.value)} className={inputCls} />
+                </Field>
               </div>
             )}
 
@@ -630,37 +532,26 @@ export function CompanyRegistrationWizard({ onClose, onRegisterSuccess, isAdminM
                 <span className="text-[10px] text-blue-700 bg-blue-100 font-bold px-2 py-0.5 rounded border border-blue-200 uppercase">
                   Secure Credit Card Billing
                 </span>
-                <div>
-                  <label className="block text-slate-700 font-bold mb-1">Card Number</label>
-                  <input
-                    type="text"
-                    value={cardNumber}
-                    onChange={(e) => setCardNumber(e.target.value)}
-                    placeholder="4532 •••• •••• 8892"
-                    className="w-full bg-white border border-slate-300 rounded-xl p-2.5 text-slate-900 font-mono font-bold"
-                  />
-                </div>
+                <Field label="Card number" required error={errors.cardNumber}>
+                  <input type="text" inputMode="numeric" autoComplete="cc-number" maxLength={23} value={cardNumber} placeholder="4532 1234 5678 8892"
+                    onChange={(e) => edit(setCardNumber, 'cardNumber')(e.target.value.replace(/[^\d\s]/g, ''))}
+                    className={`${inputCls} font-mono font-bold`} />
+                </Field>
                 <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-slate-700 font-bold mb-1">Expiry Date</label>
-                    <input
-                      type="text"
-                      value={cardExpiry}
-                      onChange={(e) => setCardExpiry(e.target.value)}
-                      placeholder="MM/YY"
-                      className="w-full bg-white border border-slate-300 rounded-xl p-2.5 text-slate-900 font-mono font-bold"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-slate-700 font-bold mb-1">CVC Code</label>
-                    <input
-                      type="text"
-                      value={cardCvc}
-                      onChange={(e) => setCardCvc(e.target.value)}
-                      placeholder="123"
-                      className="w-full bg-white border border-slate-300 rounded-xl p-2.5 text-slate-900 font-mono font-bold"
-                    />
-                  </div>
+                  <Field label="Expiry date" required error={errors.cardExpiry}>
+                    <input type="text" inputMode="numeric" autoComplete="cc-exp" maxLength={5} value={cardExpiry} placeholder="MM/YY"
+                      onChange={(e) => {
+                        let v = e.target.value.replace(/[^\d/]/g, '');
+                        if (/^\d{3,4}$/.test(v)) v = `${v.slice(0, 2)}/${v.slice(2)}`;
+                        edit(setCardExpiry, 'cardExpiry')(v);
+                      }}
+                      className={`${inputCls} font-mono font-bold`} />
+                  </Field>
+                  <Field label="CVC code" required error={errors.cardCvc}>
+                    <input type="text" inputMode="numeric" autoComplete="cc-csc" maxLength={4} value={cardCvc} placeholder="123"
+                      onChange={(e) => edit(setCardCvc, 'cardCvc')(e.target.value.replace(/[^\d]/g, ''))}
+                      className={`${inputCls} font-mono font-bold`} />
+                  </Field>
                 </div>
               </div>
             )}
@@ -668,6 +559,7 @@ export function CompanyRegistrationWizard({ onClose, onRegisterSuccess, isAdminM
             <div className="pt-4 flex justify-between gap-3">
               <button
                 type="button"
+                title="Go back to the plans"
                 onClick={() => setStep(3)}
                 className="px-5 py-3 rounded-xl border border-slate-300 font-bold text-slate-600 hover:bg-slate-50 cursor-pointer"
               >
@@ -677,7 +569,8 @@ export function CompanyRegistrationWizard({ onClose, onRegisterSuccess, isAdminM
               {isAdminMode ? (
                 <button
                   type="button"
-                  onClick={() => setStep(5)}
+                  title="Check the payment details, then set the company's login password"
+                  onClick={() => { if (validatePayment()) setStep(5); }}
                   className="px-6 py-3 rounded-xl bg-[#0286cd] hover:bg-[#026fa8] text-white font-extrabold flex items-center gap-2 shadow-md cursor-pointer"
                 >
                   <span>Set Credentials (Admin)</span>
@@ -687,7 +580,8 @@ export function CompanyRegistrationWizard({ onClose, onRegisterSuccess, isAdminM
                 <button
                   type="button"
                   disabled={submitting}
-                  onClick={handleFinalRegister}
+                  title="Check the payment details and create your account"
+                  onClick={() => { if (validatePayment()) handleFinalRegister(); }}
                   className="px-8 py-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs flex items-center gap-2 shadow-lg shadow-emerald-600/30 cursor-pointer"
                 >
                   {submitting ? <RefreshCw className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}
@@ -707,20 +601,14 @@ export function CompanyRegistrationWizard({ onClose, onRegisterSuccess, isAdminM
               <p className="text-[11px] text-amber-700">System Admin creates the official login password. The credentials will be assigned to <strong>{email}</strong>.</p>
             </div>
 
-            <div>
-              <label className="block text-slate-700 font-bold mb-1">Company Access Password *</label>
-              <input
-                type="text"
-                required
-                value={adminPassword}
-                onChange={(e) => setAdminPassword(e.target.value)}
-                className="w-full bg-slate-50 border border-slate-300 rounded-xl p-3 text-slate-900 font-mono font-bold"
-              />
-            </div>
+            <Field label="Company access password" required error={errors.adminPassword} as="div">
+              <PasswordInput value={adminPassword} onChange={edit(setAdminPassword, 'adminPassword')} showChecklist />
+            </Field>
 
             <div className="pt-4 flex justify-between gap-3">
               <button
                 type="button"
+                title="Go back to payment"
                 onClick={() => setStep(4)}
                 className="px-5 py-3 rounded-xl border border-slate-300 font-bold text-slate-600 hover:bg-slate-50 cursor-pointer"
               >
@@ -729,7 +617,8 @@ export function CompanyRegistrationWizard({ onClose, onRegisterSuccess, isAdminM
               <button
                 type="button"
                 disabled={submitting}
-                onClick={handleFinalRegister}
+                title="Create the company account with this login password"
+                onClick={() => { if (validateCredentials()) handleFinalRegister(); }}
                 className="px-8 py-3.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white font-black text-xs flex items-center gap-2 shadow-lg shadow-emerald-600/30 cursor-pointer"
               >
                 {submitting ? <RefreshCw className="w-4 h-4 animate-spin" /> : <CheckCircle2 className="w-4 h-4" />}

@@ -33,9 +33,9 @@ export function ServiceReportPage() {
     <Page fit title="Service completion report" subtitle={job ? `${job.jobNumber} · ${job.customerName}` : undefined}
       breadcrumb={[area, { label: job?.jobNumber || 'Job', to: base }, { label: 'Report' }]}
       actions={<>
-        <Button icon={Download} onClick={() => handleDownloadPdfReport(jobId, job?.jobNumber)}>Download</Button>
-        <Button variant="secondary" icon={Printer} onClick={print}>Print</Button>
-        <Button variant="ghost" icon={ExternalLink} onClick={() => openPrintableReport(jobId)}>Open in new tab</Button>
+        <Button title="Download the service report as a PDF" icon={Download} onClick={() => handleDownloadPdfReport(jobId, job?.jobNumber)}>Download</Button>
+        <Button title="Print the service report" variant="secondary" icon={Printer} onClick={print}>Print</Button>
+        <Button title="Open a printable copy in a new tab" variant="ghost" icon={ExternalLink} onClick={() => openPrintableReport(jobId)}>Open in new tab</Button>
       </>}>
       <Card padded={false} className="min-h-[70vh] overflow-hidden fit:min-h-0 fit:flex-1" bodyClassName="flex-1 flex">
         {src ? <iframe ref={frame} title="Service report" src={src} className="min-h-[70vh] w-full flex-1 border-0 bg-white fit:min-h-0" /> : <EmptyState title="Loading report…" />}

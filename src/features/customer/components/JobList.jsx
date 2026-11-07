@@ -24,7 +24,7 @@ export function JobList({ jobs, linkTo, showCustomer = false, emptyTitle = 'No r
         </thead>
         <tbody className="divide-y divide-slate-100">
           {jobs.map(job => (
-            <tr key={job.id} onClick={() => navigate(linkTo(job))} className="cursor-pointer hover:bg-slate-50">
+            <tr key={job.id} title="Open this request" onClick={() => navigate(linkTo(job))} className="cursor-pointer hover:bg-slate-50">
               <td className="py-3 pr-3 align-top font-mono text-xs font-bold text-brand whitespace-nowrap">{job.jobNumber || job.id.slice(0, 8)}</td>
               {showCustomer && <td className="py-3 pr-3 align-top font-semibold text-slate-900">{job.customerName}</td>}
               <td className="py-3 pr-3 align-top">
@@ -42,7 +42,7 @@ export function JobList({ jobs, linkTo, showCustomer = false, emptyTitle = 'No r
       <ul className="space-y-2 md:hidden">
         {jobs.map(job => (
           <li key={job.id}>
-            <button onClick={() => navigate(linkTo(job))} className="w-full rounded-xl border border-slate-200 bg-white p-3 text-left shadow-sm active:bg-slate-50 cursor-pointer">
+            <button title="Open this request" onClick={() => navigate(linkTo(job))} className="w-full rounded-xl border border-slate-200 bg-white p-3 text-left shadow-sm active:bg-slate-50 cursor-pointer">
               <div className="flex items-center justify-between gap-2">
                 <span className="font-mono text-xs font-bold text-brand">{job.jobNumber || job.id.slice(0, 8)}</span>
                 <StatusChip status={job.status} />

@@ -20,7 +20,7 @@ const PLACEHOLDER = {
   customer: 'Search your requests and sites',
   technician: 'Search your jobs',
   admin: 'Search jobs, customers, sites, technicians',
-  config: 'Search settings'
+  config: 'Search settings, customers, technicians'
 };
 
 function useSearch(query) {
@@ -101,7 +101,7 @@ export function GlobalSearch({ role, mobile = false, onClose }) {
               <div key={`${r.type}-${r.id}`} role="option" aria-selected={active === r.index}
                 className={cx('group mx-2 flex items-center gap-2 rounded-xl px-2 py-2', active === r.index ? 'bg-sky-50' : 'hover:bg-slate-50')}
                 onMouseEnter={() => setActive(r.index)}>
-                <button type="button" onClick={() => go(r)} className="min-w-0 flex-1 text-left cursor-pointer">
+                <button title="Open this record" type="button" onClick={() => go(r)} className="min-w-0 flex-1 text-left cursor-pointer">
                   <div className="flex items-center gap-2">
                     <span className="truncate text-sm font-semibold text-slate-900">{r.title}</span>
                     {r.status && <span className="hidden shrink-0 sm:inline"><StatusChip status={r.status} /></span>}
@@ -129,7 +129,7 @@ export function GlobalSearch({ role, mobile = false, onClose }) {
         className="min-w-0 flex-1 bg-transparent text-sm text-slate-900 placeholder:text-slate-400 focus:outline-none" />
       {loading && <Loader2 className="h-4 w-4 shrink-0 animate-spin text-slate-400" />}
       {!mobile && !query && <kbd className="hidden rounded border border-slate-200 bg-white px-1.5 text-[10px] font-semibold text-slate-400 xl:inline">Ctrl K</kbd>}
-      {query && <button type="button" onClick={() => { setQuery(''); inputRef.current?.focus(); }} aria-label="Clear search" className="text-slate-400 hover:text-slate-700 cursor-pointer"><X className="h-4 w-4" /></button>}
+      {query && <button title="Clear the search" type="button" onClick={() => { setQuery(''); inputRef.current?.focus(); }} aria-label="Clear search" className="text-slate-400 hover:text-slate-700 cursor-pointer"><X className="h-4 w-4" /></button>}
     </div>
   );
 
@@ -138,7 +138,7 @@ export function GlobalSearch({ role, mobile = false, onClose }) {
       <div className="fixed inset-0 z-[150] flex flex-col bg-white safe-top">
         <div className="flex items-center gap-2 border-b border-slate-200 p-3">
           <div className="flex-1">{input}</div>
-          <button type="button" onClick={onClose} className="h-11 px-2 text-sm font-semibold text-slate-600 cursor-pointer">Cancel</button>
+          <button title="Close search" type="button" onClick={onClose} className="h-11 px-2 text-sm font-semibold text-slate-600 cursor-pointer">Cancel</button>
         </div>
         {panel || <p className="p-4 text-sm text-slate-500">Type at least 2 letters. {PLACEHOLDER[role]}.</p>}
       </div>

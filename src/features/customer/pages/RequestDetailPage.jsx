@@ -27,9 +27,9 @@ export function RequestDetailPage() {
       breadcrumb={[{ label: 'Requests', to: '/app/requests' }, { label: job.jobNumber || 'Request' }]}
       actions={<>
         <StatusChip status={job.status} />
-        {isNewJob(job.status) && <Button to={`/app/requests/${job.id}/edit`} variant="secondary" icon={Edit3}>Edit request</Button>}
-        {hasTech(job) && live && <Button href={`tel:${job.technicianPhone || job.onsitePhone || ''}`} variant="success" icon={Phone}>Call technician</Button>}
-        {isCompleted(job.status) && <Button to={`/app/requests/${job.id}/report`} icon={FileText}>Service report</Button>}
+        {isNewJob(job.status) && <Button title="Change the details while the request is still new" to={`/app/requests/${job.id}/edit`} variant="secondary" icon={Edit3}>Edit request</Button>}
+        {hasTech(job) && live && <Button title="Call the technician on their phone" href={`tel:${job.technicianPhone || job.onsitePhone || ''}`} variant="success" icon={Phone}>Call technician</Button>}
+        {isCompleted(job.status) && <Button title="Open the service report for this job" to={`/app/requests/${job.id}/report`} icon={FileText}>Service report</Button>}
       </>}
     >
       {job.status === 'ARRIVED' && (
@@ -45,7 +45,7 @@ export function RequestDetailPage() {
             icon={MapPin}
             className="min-h-[260px] fit:flex-1"
             bodyClassName="flex-1 flex flex-col"
-            actions={<Button variant="ghost" size="sm" icon={mapFull ? Minimize2 : Maximize2} onClick={() => setMapFull(f => !f)} className="hidden lg:inline-flex">{mapFull ? 'Smaller' : 'Full width'}</Button>}
+            actions={<Button title="Make the map bigger or smaller" variant="ghost" size="sm" icon={mapFull ? Minimize2 : Maximize2} onClick={() => setMapFull(f => !f)} className="hidden lg:inline-flex">{mapFull ? 'Smaller' : 'Full width'}</Button>}
           >
             <MapEmbed address={job.address} interactive className="min-h-[220px] flex-1" />
           </Card>

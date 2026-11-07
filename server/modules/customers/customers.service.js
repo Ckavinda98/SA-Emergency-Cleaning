@@ -86,7 +86,11 @@ export async function create(actor, body) {
     action: 'CUSTOMER_CREATED',
     entityType: 'Organization',
     entityId: customer.id,
-    diff: { businessName: customer.businessName, email: normEmail, membershipPlan: customer.membershipPlan }
+    diff: {
+      businessName: customer.businessName, abn: customer.abn, primaryContactName: customer.primaryContactName,
+      phoneNumber: customer.phoneNumber, email: normEmail, membershipPlan: customer.membershipPlan,
+      sites: customer.locations.map(l => `${l.name}: ${l.address}`).join('; ')
+    }
   });
 
   return { ...customer, loginEmail: normEmail, tempPassword: body.password ? undefined : tempPassword };
@@ -96,12 +100,16 @@ export async function updateProfile(actor, id, body) {
   assertOrganizationAccess(actor, id);
   const { businessName, primaryContactName, phoneNumber, email, password } = body;
   const before = await findOrganization(id);
+  const staff = actor.role === 'ADMIN' || actor.role === 'CONFIG';
 
   const updateData = {};
   if (businessName) updateData.businessName = businessName;
   if (primaryContactName) updateData.primaryContactName = primaryContactName;
   if (phoneNumber) updateData.phoneNumber = phoneNumber;
   if (email) updateData.email = email.trim().toLowerCase();
+  // Only staff may correct the ABN; customers call the office for that
+  const digits = (v) => String(v || '').replace(/\s/g, '');
+  if (staff && body.abn && digits(body.abn) !== digits(before.abn)) updateData.abn = digits(body.abn);
 
   // The login account of this company: the signed-in customer, or the user with the company email
   const loginUser = actor.role === 'CUSTOMER'
@@ -126,7 +134,7 @@ export async function updateProfile(actor, id, body) {
     return updated;
   });
 
-  const diff = changedFields(before, updateData, ['businessName', 'primaryContactName', 'phoneNumber', 'email']);
+  const diff = changedFields(before, updateData, ['businessName', 'abn', 'primaryContactName', 'phoneNumber', 'email']);
   if (password) diff.password = 'changed';
   await recordAudit(actor, { action: 'PROFILE_UPDATED', entityType: 'Organization', entityId: customer.id, diff });
 
@@ -181,7 +189,10 @@ export async function remove(actor, id) {
     action: 'CUSTOMER_DELETED',
     entityType: 'Organization',
     entityId: customer.id,
-    diff: { businessName: customer.businessName, email: customer.email }
+    diff: {
+      businessName: customer.businessName, abn: customer.abn, primaryContactName: customer.primaryContactName,
+      phoneNumber: customer.phoneNumber, email: customer.email, membershipPlan: customer.membershipPlan, pointsBalance: customer.pointsBalance
+    }
   });
   return { success: true, message: 'Account and all associated data have been permanently deleted.' };
 }
@@ -204,7 +215,7 @@ export async function addSite(actor, organizationId, body) {
       securityNotes: securityNotes || null
     }
   });
-  await recordAudit(actor, { action: 'LOCATION_CREATED', entityType: 'Location', entityId: location.id, diff: { organizationId: org.id, name, address } });
+  await recordAudit(actor, { action: 'LOCATION_CREATED', entityType: 'Location', entityId: location.id, diff: { customer: org.businessName, name, address, contactName: location.contactName, contactPhone: location.contactPhone, accessInstructions: location.accessInstructions, securityNotes: location.securityNotes } });
   return location;
 }
 

@@ -1,7 +1,6 @@
 // W3 Customer dashboard. On desktop it fits one screen: only the request list scrolls inside its card.
 import React, { useState } from 'react';
-import { Link } from 'react-router-dom';
-import { ShieldCheck, Award, Clock, Siren, AlertTriangle, MapPin, Plus, Info } from 'lucide-react';
+import { ShieldCheck, Award, Clock, Siren, AlertTriangle, MapPin, Plus } from 'lucide-react';
 import { useCustomerSummary } from '@/app/AppData.jsx';
 import { Page, Card, Kpi, Badge, Button, Tabs } from '@/shared/ui/index.jsx';
 import { isFinished } from '@/shared/ui/jobs.jsx';
@@ -31,13 +30,13 @@ export function CustomerDashboard() {
       <div className="grid shrink-0 grid-cols-2 gap-3 md:grid-cols-3 md:gap-4">
         <Kpi className="col-span-2 md:col-span-1" label="Membership" value={`${activePlan?.name} plan`} icon={ShieldCheck}
           sub={`$${activePlan?.price}/mo · ${activePlan?.callouts} call-outs included`}
-          action={<Link to="/app/membership" className="font-semibold text-brand hover:underline">Manage</Link>} />
+          to="/app/membership" title="Open your membership: plan, price and billing" />
         <Kpi label="Call-outs left" value={`${s.remaining} / ${s.included}`} icon={Clock} tone={s.exhausted ? 'warning' : 'success'}
           sub={<span className="block"><span className="mb-1 block h-1.5 w-full overflow-hidden rounded-full bg-slate-100"><span className={`block h-full rounded-full ${s.exhausted ? 'bg-amber-500' : 'bg-emerald-500'}`} style={{ width: `${(s.remaining / (s.included || 1)) * 100}%` }} /></span>Resets in 12 days</span>}
-          action={<Link to="/app/membership#callouts" className="inline-flex items-center gap-1 font-semibold text-brand hover:underline"><Info className="h-3 w-3" />How it works</Link>} />
+          to="/app/membership#callouts" title="See how call-outs work and how many you have used" />
         <Kpi label="Reward points" value={`${account.pointsBalance ?? 0} pts`} icon={Award} tone="rewards"
           sub={s.tenureUnlocked ? 'Redemptions unlocked' : `Unlocks after ${config.tenureMinMonths} months`}
-          action={<Link to="/app/rewards" className="font-semibold text-purple-700 hover:underline">Redeem</Link>} />
+          to="/app/rewards" title="Open reward points to redeem them for free cleaning" />
       </div>
 
       <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(280px,1fr)_2fr] fit:min-h-0 fit:flex-1 fit:grid-rows-[minmax(0,1fr)]">
@@ -47,7 +46,7 @@ export function CustomerDashboard() {
             <p className="text-sm text-slate-600">Use your points for free periodic cleaning: steam cleaning, pressure washing, tile & grout, deep cleaning and high dusting.</p>
           </Card>
           <Card title={`Your sites (${(account.locations || []).length})`} icon={MapPin} className="fit:min-h-0 fit:flex-1" bodyClassName="fit:overflow-y-auto"
-            actions={<Button to="/app/account/sites" variant="ghost" size="sm">Manage</Button>}>
+            actions={<Button title="Add or edit your service sites" to="/app/account/sites" variant="ghost" size="sm">Manage</Button>}>
             <ul className="space-y-2">
               {(account.locations || []).map(l => (
                 <li key={l.id} className="rounded-xl border border-slate-100 bg-slate-50 p-2.5">
@@ -66,7 +65,7 @@ export function CustomerDashboard() {
           bodyClassName="fit:flex-1 fit:overflow-y-auto"
           actions={<>
             <Tabs value={tab} onChange={setTab} tabs={[{ key: 'ongoing', label: 'Ongoing', count: ongoing.length }, { key: 'past', label: 'Past', count: past.length }]} />
-            <Button to="/app/requests" variant="ghost" size="sm">View all</Button>
+            <Button title="See all your requests" to="/app/requests" variant="ghost" size="sm">View all</Button>
           </>}
         >
           <JobList
@@ -75,7 +74,7 @@ export function CustomerDashboard() {
             compact
             emptyTitle={tab === 'ongoing' ? 'No ongoing requests' : 'No past requests yet'}
             emptyText={tab === 'ongoing' ? 'When something happens on site, raise a request and we aim to attend within 2–4 hours.' : undefined}
-            emptyAction={tab === 'ongoing' && !s.exhausted ? <Button to="/app/requests/new" size="sm" icon={Plus}>New request</Button> : null}
+            emptyAction={tab === 'ongoing' && !s.exhausted ? <Button title="Request emergency cleaning" to="/app/requests/new" size="sm" icon={Plus}>New request</Button> : null}
           />
         </Card>
       </div>
@@ -88,7 +87,7 @@ function EmergencyCard({ s }) {
     return (
       <Card tone="danger" title="Membership cancelled" icon={AlertTriangle}>
         <p className="text-sm text-red-800">Priority 2–4 hour attendance is switched off. Choose a plan to restart it.</p>
-        <Button to="/app/membership/change" className="mt-3" block>Choose a plan</Button>
+        <Button title="Pick a membership plan" to="/app/membership/change" className="mt-3" block>Choose a plan</Button>
       </Card>
     );
   }
@@ -97,8 +96,8 @@ function EmergencyCard({ s }) {
       <Card tone="warning" title="All call-outs used this month" icon={AlertTriangle}>
         <p className="text-sm text-amber-900">You can still request help. Extra call-outs cost ${s.config.additionalCalloutFee} plus ${s.config.overageHourlyRate}/hr, or upgrade your plan.</p>
         <div className="mt-3 grid gap-2 sm:grid-cols-2">
-          <Button to="/app/requests/new" variant="emergency" icon={Siren}>Request anyway</Button>
-          <Button to="/app/membership/change" variant="secondary">Upgrade plan</Button>
+          <Button title="Send a request now. Extra call-out charges apply." to="/app/requests/new" variant="emergency" icon={Siren}>Request anyway</Button>
+          <Button title="Move to a plan with more call-outs" to="/app/membership/change" variant="secondary">Upgrade plan</Button>
         </div>
       </Card>
     );
@@ -112,7 +111,7 @@ function EmergencyCard({ s }) {
           <p className="text-xs text-sky-100">2–4 hour target attendance · 24/7 response desk</p>
         </div>
       </div>
-      <Button to="/app/requests/new" variant="white" size="lg" block className="mt-4">Request emergency cleaning</Button>
+      <Button title="Tell us about an emergency. We aim to be on site within 2–4 hours." to="/app/requests/new" variant="white" size="lg" block className="mt-4">Request emergency cleaning</Button>
     </div>
   );
 }

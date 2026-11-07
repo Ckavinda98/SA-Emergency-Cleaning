@@ -17,7 +17,7 @@ import {
   DispatchPage, AdminJobPage, LiveMapPage, CustomersPage, CustomerDetailPage, AdminRegisterCompanyPage,
   TechniciansPage, TechnicianFormPage, RewardsQueuePage, ReportsPage, HotlinePage
 } from '@/features/admin';
-import { SettingsPage } from '@/features/config';
+import { SettingsPage, ActivityPage, ActivityDetailPage } from '@/features/config';
 
 export default function App() {
   return (
@@ -25,6 +25,7 @@ export default function App() {
       <ToastProvider>
         <AppDataProvider>
           <LegacyHashRedirect />
+          <ScrollToAnchor />
           <Routes>
             <Route path="/login" element={<PublicOnly><LoginPage /></PublicOnly>} />
             <Route path="/register/*" element={<PublicOnly><RegisterPage /></PublicOnly>} />
@@ -75,6 +76,13 @@ export default function App() {
 
               <Route path="/settings" element={<Outlet />}>
                 <Route index element={<Navigate to="/settings/pricing" replace />} />
+                {/* Config account: customers, technicians (view and edit) and the activity log */}
+                <Route path="customers" element={<CustomersPage />} />
+                <Route path="customers/:customerId" element={<CustomerDetailPage />} />
+                <Route path="technicians" element={<TechniciansPage />} />
+                <Route path="technicians/:techId" element={<TechnicianFormPage />} />
+                <Route path="activity" element={<ActivityPage />} />
+                <Route path="activity/:logId" element={<ActivityDetailPage />} />
                 <Route path=":section" element={<SettingsPage />} />
               </Route>
 
@@ -105,6 +113,17 @@ function PublicOnly({ children }) {
   const { currentUser } = useAppData();
   if (currentUser) return <Navigate to={ROLE_HOME_PATH[currentUser.role] || '/'} replace />;
   return children;
+}
+
+// A link such as /app/membership#callouts (used by the dashboard tiles) scrolls to that section
+function ScrollToAnchor() {
+  const { pathname, hash } = useLocation();
+  useEffect(() => {
+    if (!hash || hash.includes('/')) return undefined;
+    const t = setTimeout(() => document.getElementById(hash.slice(1))?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 60);
+    return () => clearTimeout(t);
+  }, [pathname, hash]);
+  return null;
 }
 
 function LegacyHashRedirect() {

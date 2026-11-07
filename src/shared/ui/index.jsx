@@ -108,21 +108,24 @@ export function Button({ variant = 'primary', size = 'md', to, href, icon: Icon,
 
 /* ----------------------------------------------------------------- Data display */
 
-export function Kpi({ label, value, sub, tone = 'brand', icon: Icon, action, className }) {
+// A tile with a number. With `to` the whole tile is a link to the matching list.
+export function Kpi({ label, value, sub, tone = 'brand', icon: Icon, action, className, to, title }) {
   const accent = { brand: 'text-brand', success: 'text-emerald-600', warning: 'text-amber-600', danger: 'text-red-600', rewards: 'text-purple-600', slate: 'text-slate-900' }[tone];
+  const Tag = to ? Link : 'div';
   return (
-    <div className={cx('rounded-2xl border border-slate-200 bg-white p-4 shadow-sm', className)}>
+    <Tag to={to} title={title || (to ? `Open ${String(label).toLowerCase()}` : undefined)}
+      className={cx('group block rounded-2xl border border-slate-200 bg-white p-4 shadow-sm', to && 'cursor-pointer transition hover:-translate-y-0.5 hover:border-brand hover:shadow-md focus-visible:outline-2 focus-visible:outline-brand', className)}>
       <div className="flex items-start justify-between gap-2">
         <span className="text-xs font-semibold uppercase tracking-wide text-slate-500">{label}</span>
         {Icon && <Icon className={cx('h-4 w-4 shrink-0', accent)} />}
       </div>
       <div className={cx('mt-1 text-2xl font-extrabold tracking-tight', accent)}>{value}</div>
-      {(sub || action) && (
+      {(sub || action || to) && (
         <div className="mt-1 flex flex-wrap items-center justify-between gap-1 text-xs text-slate-500">
-          <span>{sub}</span>{action}
+          <span>{sub}</span>{action || (to && <ChevronRight className="h-4 w-4 text-slate-300 group-hover:text-brand" />)}
         </div>
       )}
-    </div>
+    </Tag>
   );
 }
 
@@ -147,6 +150,7 @@ export function Tabs({ tabs, value, onChange, className }) {
           key={t.key}
           role="tab"
           aria-selected={value === t.key}
+          title={`Show ${String(t.label).toLowerCase()}`}
           onClick={() => onChange(t.key)}
           className={cx('h-8 shrink-0 rounded-lg px-3 text-xs font-bold transition-colors cursor-pointer',
             value === t.key ? 'bg-white text-brand-dark shadow-sm' : 'text-slate-600 hover:text-slate-900')}
@@ -182,15 +186,47 @@ export function InfoRow({ label, children }) {
 
 export const inputCls = 'w-full rounded-xl border border-slate-300 bg-white px-3 py-2.5 text-base md:text-sm text-slate-900 placeholder:text-slate-400 focus:border-brand focus:outline-none focus:ring-2 focus:ring-brand/20';
 
-export function Field({ label, required, hint, error, children, className }) {
+// A labelled form field. Pass error="…" to show the message under this field and outline the input in red.
+export function Field({ label, required, hint, error, children, className, as = 'label' }) {
+  const Tag = as;
+  // Marks the input red. Works for plain inputs and for PhoneInput / PasswordInput / AddressAutocomplete,
+  // which pass aria-invalid and className on to their own <input>.
+  const child = error && React.isValidElement(children) && children.type !== React.Fragment
+    ? React.cloneElement(children, { 'aria-invalid': true, className: cx(children.props.className, '!border-red-400 !bg-red-50/40 focus:!border-red-500') })
+    : children;
   return (
-    <label className={cx('block min-w-0', className)}>
-      <span className="mb-1 block text-xs font-semibold text-slate-700">{label}{required && <span className="text-red-500"> *</span>}</span>
-      {children}
+    <Tag className={cx('block min-w-0', className)}>
+      {label && <span className="mb-1 block text-xs font-semibold text-slate-700">{label}{required && <span className="text-red-500"> *</span>}</span>}
+      {child}
       {hint && !error && <span className="mt-1 block text-[11px] text-slate-500">{hint}</span>}
-      {error && <span className="mt-1 block text-[11px] font-semibold text-red-600">{error}</span>}
-    </label>
+      {error && <span className="mt-1 flex items-start gap-1 text-[11px] font-semibold text-red-600" role="alert"><AlertCircle className="mt-px h-3 w-3 shrink-0" />{error}</span>}
+    </Tag>
   );
+}
+
+// Form errors keyed by field name. check() runs the rules, shows every message under its field,
+// moves focus to the first problem and returns true only when everything is valid.
+export function useFieldErrors() {
+  const [errors, setErrors] = useState({});
+  const check = (rules, values) => {
+    const next = {};
+    for (const [field, rule] of Object.entries(rules)) { const m = rule(values); if (m) next[field] = m; }
+    setErrors(next);
+    if (Object.keys(next).length) setTimeout(() => document.querySelector('[aria-invalid="true"]')?.focus(), 0);
+    return Object.keys(next).length === 0;
+  };
+  // Clear a field's message as soon as the user edits it
+  const clear = (field) => setErrors(e => (e[field] ? { ...e, [field]: undefined } : e));
+  const set = (field, message) => setErrors(e => ({ ...e, [field]: message }));
+  // Puts the API's per-field messages (400 { fields }) under the fields. Returns true when it did.
+  const fromServer = (data) => {
+    const f = data?.fields;
+    if (!f || !Object.keys(f).length) return false;
+    setErrors(f);
+    setTimeout(() => document.querySelector('[aria-invalid="true"]')?.focus(), 0);
+    return true;
+  };
+  return { errors, check, clear, set, setErrors, fromServer };
 }
 
 export function Alert({ tone = 'danger', children, className }) {
@@ -214,15 +250,16 @@ export function StickyActions({ children, className }) {
 }
 
 // Inline "Are you sure?" in place of window.confirm()
-export function InlineConfirm({ label, confirmLabel = 'Confirm', message, onConfirm, variant = 'danger-soft', size = 'sm', icon, disabled }) {
+export function InlineConfirm({ label, confirmLabel = 'Confirm', message, onConfirm, variant = 'danger-soft', size = 'sm', icon, disabled, title, confirmVariant = 'danger', className }) {
   const [asking, setAsking] = useState(false);
   const [busy, setBusy] = useState(false);
-  if (!asking) return <Button variant={variant} size={size} icon={icon} disabled={disabled} onClick={() => setAsking(true)}>{label}</Button>;
+  if (!asking) return <Button variant={variant} size={size} icon={icon} disabled={disabled} title={title} className={className} onClick={(e) => { e.preventDefault(); e.stopPropagation(); setAsking(true); }}>{label}</Button>;
+  const tone = confirmVariant === 'danger' ? 'border-red-200 bg-red-50 text-red-800' : 'border-emerald-200 bg-emerald-50 text-emerald-900';
   return (
-    <span className="inline-flex flex-wrap items-center gap-2 rounded-xl border border-red-200 bg-red-50 px-2 py-1">
-      {message && <span className="text-xs font-semibold text-red-800">{message}</span>}
-      <Button variant="danger" size="sm" disabled={busy} onClick={async () => { setBusy(true); try { await onConfirm(); } finally { setBusy(false); setAsking(false); } }}>{busy ? 'Working…' : confirmLabel}</Button>
-      <Button variant="ghost" size="sm" onClick={() => setAsking(false)}>Cancel</Button>
+    <span className={cx('inline-flex flex-wrap items-center gap-2 rounded-xl border px-2 py-1', tone)} onClick={e => { e.preventDefault(); e.stopPropagation(); }}>
+      {message && <span className="text-xs font-semibold">{message}</span>}
+      <Button variant={confirmVariant} size="sm" disabled={busy} title={`Yes: ${String(label).toLowerCase()}`} onClick={async () => { setBusy(true); try { await onConfirm(); } finally { setBusy(false); setAsking(false); } }}>{busy ? 'Working…' : confirmLabel}</Button>
+      <Button variant="ghost" size="sm" title="Go back without doing anything" onClick={() => setAsking(false)}>Cancel</Button>
     </span>
   );
 }
@@ -249,7 +286,7 @@ export function ToastProvider({ children }) {
             t.tone === 'danger' ? 'border-red-200' : t.tone === 'warning' ? 'border-amber-200' : 'border-emerald-200')}>
             {t.tone === 'danger' ? <AlertCircle className="mt-0.5 h-4 w-4 shrink-0 text-red-600" /> : <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" />}
             <span className="min-w-0 flex-1 text-slate-800">{t.message}</span>
-            <button onClick={() => dismiss(t.id)} className="text-slate-400 hover:text-slate-700 cursor-pointer" aria-label="Dismiss"><X className="h-4 w-4" /></button>
+            <button title="Dismiss this message" onClick={() => dismiss(t.id)} className="text-slate-400 hover:text-slate-700 cursor-pointer" aria-label="Dismiss"><X className="h-4 w-4" /></button>
           </div>
         ))}
       </div>

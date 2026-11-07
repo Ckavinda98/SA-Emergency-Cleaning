@@ -5,7 +5,9 @@ import { NavLink, Navigate, useNavigate, useParams } from 'react-router-dom';
 import { Building2, MapPin, Lock, Plus, Edit3, Trash2, Save } from 'lucide-react';
 import { useAppData, useCustomerSummary } from '@/app/AppData.jsx';
 import { API_BASE } from '@/shared/config/env.js';
-import { Page, Card, Button, Field, Alert, StickyActions, InlineConfirm, EmptyState, inputCls, useToast, cx } from '@/shared/ui/index.jsx';
+import { Page, Card, Button, Field, Alert, StickyActions, InlineConfirm, EmptyState, inputCls, useToast, useFieldErrors, cx } from '@/shared/ui/index.jsx';
+import { PhoneInput, PasswordInput, AddressAutocomplete } from '@/shared/ui/inputs.jsx';
+import { phoneError, emailError, passwordError, confirmPasswordError, personNameError, textError } from '@shared/validation.js';
 
 const SECTIONS = [
   { key: 'profile', label: 'Company profile', icon: Building2 },
@@ -52,36 +54,46 @@ function ProfileSection({ account }) {
   });
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
-  const set = (k) => (e) => setForm({ ...form, [k]: e.target.value });
+  const { errors, check, clear, fromServer } = useFieldErrors();
+  const setVal = (k) => (v) => { setForm(f => ({ ...f, [k]: v })); clear(k); };
+  const set = (k) => (e) => setVal(k)(e.target.value);
 
   const save = async (e) => {
     e.preventDefault();
-    setSaving(true); setError('');
+    setError('');
+    const ok = check({
+      businessName: v => textError(v.businessName, { label: 'Company name' }),
+      primaryContactName: v => personNameError(v.primaryContactName, { label: 'Primary contact' }),
+      phoneNumber: v => phoneError(v.phoneNumber),
+      email: v => emailError(v.email)
+    }, form);
+    if (!ok) return;
+    setSaving(true);
     try {
       const res = await fetch(`${API_BASE}/customers/${account.id}/profile`, {
         method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form)
       });
       const data = await res.json();
       if (res.ok && data.customer) { upsertCustomer(data.customer); notify('Company profile saved.'); }
-      else setError(data.error || 'The profile could not be saved.');
+      else if (!fromServer(data)) setError(data.error || 'The profile could not be saved.');
     } catch { setError('Cannot reach the server. Nothing was saved.'); }
     setSaving(false);
   };
 
   return (
-    <form onSubmit={save}>
+    <form onSubmit={save} noValidate>
       <Card title="Company profile" icon={Building2}>
         <Alert>{error}</Alert>
         <div className="mt-1 grid gap-3 md:grid-cols-2">
-          <Field label="Company name" required className="md:col-span-2"><input required className={inputCls} value={form.businessName} onChange={set('businessName')} autoComplete="organization" /></Field>
-          <Field label="ABN"><input className={cx(inputCls, 'bg-slate-50')} value={account.abn || ''} disabled /></Field>
-          <Field label="Primary contact" required><input required className={inputCls} value={form.primaryContactName} onChange={set('primaryContactName')} autoComplete="name" /></Field>
-          <Field label="Phone number" required><input required type="tel" className={inputCls} value={form.phoneNumber} onChange={set('phoneNumber')} autoComplete="tel" /></Field>
-          <Field label="Email address" required><input required type="email" className={inputCls} value={form.email} onChange={set('email')} autoComplete="email" /></Field>
+          <Field label="Company name" required className="md:col-span-2" error={errors.businessName}><input className={inputCls} value={form.businessName} onChange={set('businessName')} autoComplete="organization" /></Field>
+          <Field label="ABN" hint="Call us to change your ABN"><input className={cx(inputCls, 'bg-slate-50')} value={account.abn || ''} disabled /></Field>
+          <Field label="Primary contact" required error={errors.primaryContactName}><input className={inputCls} value={form.primaryContactName} onChange={set('primaryContactName')} autoComplete="name" /></Field>
+          <Field label="Phone number" required error={errors.phoneNumber}><PhoneInput value={form.phoneNumber} onChange={setVal('phoneNumber')} /></Field>
+          <Field label="Email address" required error={errors.email}><input type="email" className={inputCls} value={form.email} onChange={set('email')} autoComplete="email" /></Field>
         </div>
       </Card>
       <StickyActions>
-        <Button type="submit" icon={Save} disabled={saving}>{saving ? 'Saving…' : 'Save changes'}</Button>
+        <Button type="submit" icon={Save} disabled={saving} title="Save the company name, contact, phone and email">{saving ? 'Saving…' : 'Save changes'}</Button>
       </StickyActions>
     </form>
   );
@@ -89,7 +101,8 @@ function ProfileSection({ account }) {
 
 const EMPTY_SITE = { name: '', address: '', contactName: '', contactPhone: '', accessInstructions: '', securityNotes: '' };
 
-function SitesSection({ account }) {
+// Also used by staff on the customer page (allowAdd is false for the config account)
+export function SitesSection({ account, allowAdd = true }) {
   const { upsertCustomer } = useAppData();
   const { notify } = useToast();
   const sites = account.locations || [];
@@ -97,23 +110,33 @@ function SitesSection({ account }) {
   const [form, setForm] = useState(EMPTY_SITE);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
+  const { errors, check, clear, fromServer, setErrors } = useFieldErrors();
+  const setVal = (k) => (v) => { setForm(f => ({ ...f, [k]: v })); clear(k); };
 
   const open = (site) => {
-    setError('');
+    setError(''); setErrors({});
     setEditing(site ? site.id : 'new');
     setForm(site ? Object.fromEntries(Object.keys(EMPTY_SITE).map(k => [k, site[k] || ''])) : EMPTY_SITE);
   };
 
   const save = async (e) => {
     e.preventDefault();
-    setBusy(true); setError('');
+    setError('');
+    const ok = check({
+      name: v => textError(v.name, { label: 'Site name' }),
+      address: v => textError(v.address, { label: 'Street address', min: 4 }),
+      contactName: v => personNameError(v.contactName, { label: 'Site contact', required: false }),
+      contactPhone: v => phoneError(v.contactPhone, { required: false })
+    }, form);
+    if (!ok) return;
+    setBusy(true);
     const isNew = editing === 'new';
     try {
       const res = await fetch(isNew ? `${API_BASE}/customers/${account.id}/locations` : `${API_BASE}/locations/${editing}`, {
         method: isNew ? 'POST' : 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form)
       });
       const data = await res.json();
-      if (!res.ok) { setError(data.error || 'The site could not be saved.'); setBusy(false); return; }
+      if (!res.ok) { if (!fromServer(data)) setError(data.error || 'The site could not be saved.'); setBusy(false); return; }
       const next = isNew ? [...sites, data] : sites.map(s => s.id === data.id ? data : s);
       upsertCustomer({ ...account, locations: next });
       notify(isNew ? 'Site added.' : 'Site saved.');
@@ -123,12 +146,12 @@ function SitesSection({ account }) {
   };
 
   const f = (k, label, req, cls) => (
-    <Field label={label} required={req} className={cls}><input required={req} className={inputCls} value={form[k]} onChange={e => setForm({ ...form, [k]: e.target.value })} /></Field>
+    <Field label={label} required={req} className={cls} error={errors[k]}><input className={inputCls} value={form[k]} onChange={e => setVal(k)(e.target.value)} /></Field>
   );
 
   return (
     <div className="space-y-4">
-      <Card title={`Service sites (${sites.length})`} icon={MapPin} actions={editing === null && <Button size="sm" icon={Plus} onClick={() => open(null)}>Add site</Button>}>
+      <Card title={`Service sites (${sites.length})`} icon={MapPin} actions={editing === null && allowAdd && <Button size="sm" icon={Plus} onClick={() => open(null)} title="Add another address we clean or service">Add site</Button>}>
         {sites.length === 0 ? <EmptyState title="No sites yet" /> : (
           <ul className="grid gap-3 md:grid-cols-2">
             {sites.map(site => (
@@ -140,7 +163,7 @@ function SitesSection({ account }) {
                     {(site.contactName || site.contactPhone) && <div className="mt-1 text-xs text-slate-500">Contact: {site.contactName} {site.contactPhone && `· ${site.contactPhone}`}</div>}
                     {site.accessInstructions && <div className="mt-1 text-xs text-slate-500">Access: {site.accessInstructions}</div>}
                   </div>
-                  <Button size="sm" variant="secondary" icon={Edit3} onClick={() => open(site)}>Edit</Button>
+                  <Button size="sm" variant="secondary" icon={Edit3} onClick={() => open(site)} title={`Edit ${site.name}`}>Edit</Button>
                 </div>
               </li>
             ))}
@@ -148,21 +171,24 @@ function SitesSection({ account }) {
         )}
       </Card>
       {editing !== null && (
-        <form onSubmit={save}>
+        <form onSubmit={save} noValidate>
           <Card title={editing === 'new' ? 'Add a site' : 'Edit site'}>
             <Alert>{error}</Alert>
             <div className="mt-1 grid gap-3 md:grid-cols-2">
               {f('name', 'Site name', true)}
-              {f('address', 'Street address (Adelaide, SA)', true)}
+              <Field label="Street address (Adelaide, SA)" required as="div" error={errors.address}>
+                <AddressAutocomplete value={form.address} onChange={setVal('address')}
+                  onSelect={a => setVal('address')(a.address || a.street)} />
+              </Field>
               {f('contactName', 'Site contact')}
-              {f('contactPhone', 'Contact phone')}
+              <Field label="Contact phone" error={errors.contactPhone}><PhoneInput value={form.contactPhone} onChange={setVal('contactPhone')} /></Field>
               {f('accessInstructions', 'Access instructions', false, 'md:col-span-2')}
               {f('securityNotes', 'Security / hazard notes', false, 'md:col-span-2')}
             </div>
           </Card>
           <StickyActions>
-            <Button variant="ghost" onClick={() => setEditing(null)}>Cancel</Button>
-            <Button type="submit" icon={Save} disabled={busy}>{busy ? 'Saving…' : 'Save site'}</Button>
+            <Button variant="ghost" onClick={() => setEditing(null)} title="Close without saving">Cancel</Button>
+            <Button type="submit" icon={Save} disabled={busy} title="Save this site">{busy ? 'Saving…' : 'Save site'}</Button>
           </StickyActions>
         </form>
       )}
@@ -178,12 +204,16 @@ function SecuritySection({ account }) {
   const [pw2, setPw2] = useState('');
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
+  const { errors, check, clear, fromServer } = useFieldErrors();
 
   const save = async (e) => {
     e.preventDefault();
     setError('');
-    if (pw.length < 8) return setError('The new password must be at least 8 characters.');
-    if (pw !== pw2) return setError('The two passwords do not match.');
+    const ok = check({
+      password: v => passwordError(v.pw),
+      confirm: v => confirmPasswordError(v.pw, v.pw2)
+    }, { pw, pw2 });
+    if (!ok) return;
     setSaving(true);
     try {
       const res = await fetch(`${API_BASE}/customers/${account.id}/profile`, {
@@ -191,7 +221,7 @@ function SecuritySection({ account }) {
       });
       const data = await res.json();
       if (res.ok) { notify('Password changed.'); setPw(''); setPw2(''); }
-      else setError(data.error || 'The password could not be changed.');
+      else if (!fromServer(data)) setError(data.error || 'The password could not be changed.');
     } catch { setError('Cannot reach the server. The password was not changed.'); }
     setSaving(false);
   };
@@ -206,20 +236,24 @@ function SecuritySection({ account }) {
 
   return (
     <div className="space-y-4">
-      <form onSubmit={save}>
+      <form onSubmit={save} noValidate>
         <Card title="Change password" icon={Lock}>
           <Alert>{error}</Alert>
           <div className="mt-1 grid gap-3 md:grid-cols-2">
-            <Field label="New password" hint="At least 8 characters"><input type="password" className={inputCls} value={pw} onChange={e => setPw(e.target.value)} autoComplete="new-password" /></Field>
-            <Field label="Confirm new password"><input type="password" className={inputCls} value={pw2} onChange={e => setPw2(e.target.value)} autoComplete="new-password" /></Field>
+            <Field label="New password" required as="div" error={errors.password}>
+              <PasswordInput value={pw} onChange={v => { setPw(v); clear('password'); }} showChecklist />
+            </Field>
+            <Field label="Confirm new password" required as="div" error={errors.confirm}>
+              <PasswordInput value={pw2} onChange={v => { setPw2(v); clear('confirm'); }} />
+            </Field>
           </div>
-          <div className="mt-4 flex justify-end"><Button type="submit" disabled={saving || !pw}>{saving ? 'Saving…' : 'Change password'}</Button></div>
+          <div className="mt-4 flex justify-end"><Button type="submit" disabled={saving} title="Change the password you use to sign in">{saving ? 'Saving…' : 'Change password'}</Button></div>
         </Card>
       </form>
       <Card title="Delete account" icon={Trash2} tone="danger">
         <p className="text-sm text-red-900">Permanently delete this company account and all its data. This cannot be undone.</p>
         <div className="mt-3">
-          <InlineConfirm label="Delete account" icon={Trash2} message="Delete everything for good?" confirmLabel="Yes, delete" onConfirm={deleteAccount} />
+          <InlineConfirm label="Delete account" title="Permanently delete this company account" icon={Trash2} message="Delete everything for good?" confirmLabel="Yes, delete" onConfirm={deleteAccount} />
         </div>
       </Card>
     </div>

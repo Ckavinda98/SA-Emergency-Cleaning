@@ -19,7 +19,7 @@ describe('emergency job lifecycle', () => {
 
   it('saves an admin hotline job with source HOTLINE', async () => {
     const res = await api('post', '/jobs', s.admin.accessToken)
-      .send({ organizationId: s.ross.user.businessId, description: 'Hotline', onsiteContact: 'B', onsitePhone: '0400111222' });
+      .send({ organizationId: s.ross.user.businessId, description: 'Hotline', onsiteContact: 'Bob Lee', onsitePhone: '0400111222' });
     expect(res.status).toBe(200);
     expect(res.body.source).toBe('HOTLINE');
   });

@@ -5,7 +5,9 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { AlertTriangle, Building, User, Camera, UploadCloud, X, Siren, Info, Save } from 'lucide-react';
 import { useAppData, useCustomerSummary } from '@/app/AppData.jsx';
 import { API_BASE } from '@/shared/config/env.js';
-import { Page, Card, Button, Field, Alert, StickyActions, EmptyState, inputCls, useToast, cx } from '@/shared/ui/index.jsx';
+import { Page, Card, Button, Field, Alert, StickyActions, EmptyState, inputCls, useToast, cx, useFieldErrors } from '@/shared/ui/index.jsx';
+import { PhoneInput } from '@/shared/ui/inputs.jsx';
+import { phoneError, personNameError, numberError } from '@shared/validation.js';
 import { jobPhotos, jobVideos, isNewJob } from '@/shared/ui/jobs.jsx';
 
 export function RequestFormPage() {
@@ -52,6 +54,8 @@ function RequestForm({ job, account, config, summary, upsertJob, upsertCustomer 
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
   const [limitHit, setLimitHit] = useState(false);
+  const { errors, check, clear, fromServer } = useFieldErrors();
+  const edit = (setter, field) => (v) => { setter(v); clear(field); };
 
   const loc = locations.find(l => l.id === locId) || firstLoc;
 
@@ -76,20 +80,20 @@ function RequestForm({ job, account, config, summary, upsertJob, upsertCustomer 
     setLinkInput('');
   };
 
-  const validate = () => {
-    if (!description || description.trim().length < 5) return 'Please describe what happened (at least 5 characters).';
-    if (isNaN(Number(affectedArea)) || Number(affectedArea) <= 0) return 'Please enter the affected area in m² (a number above 0).';
-    if (!onsiteContact || onsiteContact.trim().length < 2) return 'Please enter the name of the person on site.';
-    if (!/^\d{8,12}$/.test(onsitePhone.replace(/[\s\-()+]/g, ''))) return 'Please enter a valid phone number for the person on site (8 to 12 digits).';
-    if (!accessInstructions.trim()) return 'Please tell the technician how to get in (access instructions).';
-    return '';
-  };
+  // Each message shows under its own field; the first wrong field gets the focus
+  const validate = () => check({
+    description: v => (String(v.description || '').trim().length < 5 ? 'Describe what happened (at least 5 characters).' : ''),
+    affectedArea: v => numberError(v.affectedArea, { label: 'Affected area', min: 1, max: 100000 }),
+    incidentTime: v => (!v.incidentTime ? 'Enter when it happened.' : new Date(v.incidentTime) > new Date(Date.now() + 5 * 60000) ? 'The time cannot be in the future.' : ''),
+    onsiteContact: v => personNameError(v.onsiteContact, { label: 'On-site contact name' }),
+    onsitePhone: v => phoneError(v.onsitePhone),
+    accessInstructions: v => (String(v.accessInstructions || '').trim().length < 3 ? 'Tell the technician how to get in, e.g. keypad code or who meets them.' : '')
+  }, { description, affectedArea, incidentTime, onsiteContact, onsitePhone, accessInstructions });
 
   const submit = async (e) => {
     e.preventDefault();
-    const v = validate();
-    setError(v);
-    if (v) { window.scrollTo?.(0, 0); document.getElementById('main')?.scrollTo(0, 0); return; }
+    setError('');
+    if (!validate()) return;
     setSaving(true);
     const body = {
       locationId: loc.id, locationName: loc.name, address: loc.address,
@@ -106,7 +110,7 @@ function RequestForm({ job, account, config, summary, upsertJob, upsertCustomer 
       const data = await res.json();
       if (!res.ok || data.error) {
         const msg = data.error || 'The request could not be saved.';
-        setError(msg);
+        if (!fromServer(data)) setError(msg);
         if (msg.includes('Call-out Limit')) setLimitHit(true);
         setSaving(false);
         return;
@@ -135,7 +139,7 @@ function RequestForm({ job, account, config, summary, upsertJob, upsertCustomer 
     <Page title={job ? `Edit request ${job.jobNumber || ''}` : 'Request emergency cleaning'} subtitle="Fill in what happened and how to get in. Fields marked * are required." breadcrumb={crumbs}>
       <form onSubmit={submit} noValidate className="grid gap-4 xl:grid-cols-[1fr_320px]">
         <div className="min-w-0 space-y-4">
-          <Alert tone="danger">{error}{limitHit && <> <Button to="/app/membership/change" variant="secondary" size="sm" className="ml-2">Upgrade plan</Button></>}</Alert>
+          <Alert tone="danger">{error}{limitHit && <> <Button title="Move to a plan with more call-outs" to="/app/membership/change" variant="secondary" size="sm" className="ml-2">Upgrade plan</Button></>}</Alert>
           <Alert tone="warning"><strong>Someone must be on site</strong> when the technician arrives, unless management has approved other access arrangements.</Alert>
 
           <Card title="1. Location and incident" icon={Building}>
@@ -151,14 +155,14 @@ function RequestForm({ job, account, config, summary, upsertJob, upsertCustomer 
                 </select>
               </Field>
               {category === 'Toilet overflow' && <Alert tone="info" className="md:col-span-2">{config.toiletOverflowDisclaimer}</Alert>}
-              <Field label="What happened?" required className="md:col-span-2">
-                <textarea rows={3} className={inputCls} value={description} onChange={e => setDescription(e.target.value)} placeholder="Describe the incident, the cause and what is affected…" />
+              <Field label="What happened?" required className="md:col-span-2" error={errors.description}>
+                <textarea rows={3} className={inputCls} value={description} onChange={e => edit(setDescription, 'description')(e.target.value)} placeholder="Describe the incident, the cause and what is affected…" />
               </Field>
-              <Field label="Affected area (m²)" required>
-                <input type="number" min="1" inputMode="decimal" className={inputCls} value={affectedArea} onChange={e => setAffectedArea(e.target.value)} />
+              <Field label="Affected area (m²)" required error={errors.affectedArea}>
+                <input type="text" inputMode="decimal" className={inputCls} value={affectedArea} onChange={e => edit(setAffectedArea, 'affectedArea')(e.target.value.replace(/[^\d.]/g, ''))} />
               </Field>
-              <Field label="When did it happen?" required>
-                <input type="datetime-local" className={inputCls} value={incidentTime} onChange={e => setIncidentTime(e.target.value)} />
+              <Field label="When did it happen?" required error={errors.incidentTime}>
+                <input type="datetime-local" className={inputCls} value={incidentTime} onChange={e => edit(setIncidentTime, 'incidentTime')(e.target.value)} />
               </Field>
             </div>
           </Card>
@@ -176,9 +180,9 @@ function RequestForm({ job, account, config, summary, upsertJob, upsertCustomer 
 
           <Card title="3. On-site contact and access" icon={User}>
             <div className="grid gap-3 md:grid-cols-2">
-              <Field label="On-site contact name" required><input className={inputCls} value={onsiteContact} onChange={e => setOnsiteContact(e.target.value)} autoComplete="name" /></Field>
-              <Field label="On-site contact phone" required><input type="tel" className={inputCls} value={onsitePhone} onChange={e => setOnsitePhone(e.target.value)} autoComplete="tel" placeholder="0412 345 678" /></Field>
-              <Field label="Access instructions" required className="md:col-span-2"><input className={inputCls} value={accessInstructions} onChange={e => setAccessInstructions(e.target.value)} placeholder="Keypad code, lockbox, gate entry…" /></Field>
+              <Field label="On-site contact name" required error={errors.onsiteContact}><input className={inputCls} value={onsiteContact} onChange={e => edit(setOnsiteContact, 'onsiteContact')(e.target.value)} autoComplete="name" /></Field>
+              <Field label="On-site contact phone" required error={errors.onsitePhone}><PhoneInput value={onsitePhone} onChange={edit(setOnsitePhone, 'onsitePhone')} /></Field>
+              <Field label="Access instructions" required className="md:col-span-2" error={errors.accessInstructions}><input className={inputCls} value={accessInstructions} onChange={e => edit(setAccessInstructions, 'accessInstructions')(e.target.value)} placeholder="Keypad code, lockbox, gate entry…" /></Field>
               <Field label="Access restrictions"><input className={inputCls} value={accessRestrictions} onChange={e => setAccessRestrictions(e.target.value)} placeholder="PPE, height limits, security clearance…" /></Field>
               <Field label="Parking or security"><input className={inputCls} value={parkingInstructions} onChange={e => setParkingInstructions(e.target.value)} placeholder="Loading bay, visitor parking, security desk…" /></Field>
             </div>
@@ -197,20 +201,20 @@ function RequestForm({ job, account, config, summary, upsertJob, upsertCustomer 
             </div>
             <div className="mt-3 flex gap-2">
               <input className={inputCls} value={linkInput} onChange={e => setLinkInput(e.target.value)} onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); addLink(); } }} placeholder="…or paste a photo or video link" />
-              <Button variant="secondary" onClick={addLink}>Add</Button>
+              <Button variant="secondary" onClick={addLink} title="Add this photo or video link to the request">Add</Button>
             </div>
             {(photos.length > 0 || videos.length > 0) ? (
               <div className="mt-3 flex flex-wrap gap-2">
                 {photos.map((src, i) => (
                   <div key={`p${i}`} className="relative">
                     <img src={src} alt={`Photo ${i + 1}`} className="h-20 w-20 rounded-xl border border-slate-200 object-cover" />
-                    <button type="button" onClick={() => setPhotos(photos.filter((_, x) => x !== i))} className="absolute -right-1.5 -top-1.5 rounded-full bg-red-600 p-1 text-white shadow cursor-pointer" aria-label="Remove photo"><X className="h-3 w-3" /></button>
+                    <button type="button" onClick={() => setPhotos(photos.filter((_, x) => x !== i))} className="absolute -right-1.5 -top-1.5 rounded-full bg-red-600 p-1 text-white shadow cursor-pointer" aria-label="Remove photo" title="Remove this photo"><X className="h-3 w-3" /></button>
                   </div>
                 ))}
                 {videos.map((src, i) => (
                   <div key={`v${i}`} className="relative flex h-20 w-32 items-center justify-center rounded-xl bg-slate-900 px-2 text-center text-[10px] text-slate-200">
                     Video {i + 1}
-                    <button type="button" onClick={() => setVideos(videos.filter((_, x) => x !== i))} className="absolute -right-1.5 -top-1.5 rounded-full bg-red-600 p-1 text-white shadow cursor-pointer" aria-label="Remove video"><X className="h-3 w-3" /></button>
+                    <button type="button" onClick={() => setVideos(videos.filter((_, x) => x !== i))} className="absolute -right-1.5 -top-1.5 rounded-full bg-red-600 p-1 text-white shadow cursor-pointer" aria-label="Remove video" title="Remove this video"><X className="h-3 w-3" /></button>
                   </div>
                 ))}
               </div>
@@ -218,8 +222,8 @@ function RequestForm({ job, account, config, summary, upsertJob, upsertCustomer 
           </Card>
 
           <StickyActions className="xl:hidden">
-            <Button variant="ghost" onClick={() => navigate(-1)}>Cancel</Button>
-            <Button type="submit" variant={job ? 'primary' : 'emergency'} icon={job ? Save : Siren} disabled={saving}>{saving ? 'Sending…' : job ? 'Save changes' : 'Send request'}</Button>
+            <Button variant="ghost" onClick={() => navigate(-1)} title="Go back without sending">Cancel</Button>
+            <Button type="submit" variant={job ? 'primary' : 'emergency'} icon={job ? Save : Siren} disabled={saving} title={job ? 'Save the changes to this request' : 'Send the emergency request to our dispatch team'}>{saving ? 'Sending…' : job ? 'Save changes' : 'Send request'}</Button>
           </StickyActions>
         </div>
 
@@ -242,8 +246,8 @@ function RequestForm({ job, account, config, summary, upsertJob, upsertCustomer 
                 </div>
               </Card>
             )}
-            <Button type="submit" variant={job ? 'primary' : 'emergency'} size="lg" block icon={job ? Save : Siren} disabled={saving}>{saving ? 'Sending…' : job ? 'Save changes' : 'Send emergency request'}</Button>
-            <Button variant="ghost" block onClick={() => navigate(-1)}>Cancel</Button>
+            <Button type="submit" variant={job ? 'primary' : 'emergency'} size="lg" block icon={job ? Save : Siren} disabled={saving} title={job ? 'Save the changes to this request' : 'Send the emergency request to our dispatch team'}>{saving ? 'Sending…' : job ? 'Save changes' : 'Send emergency request'}</Button>
+            <Button variant="ghost" block onClick={() => navigate(-1)} title="Go back without sending">Cancel</Button>
           </div>
         </aside>
       </form>

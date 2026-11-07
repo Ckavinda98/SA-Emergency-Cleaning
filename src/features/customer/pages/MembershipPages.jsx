@@ -43,8 +43,8 @@ export function MembershipPage() {
   return (
     <Page title="Membership" subtitle="Your plan, call-outs and billing in one place" breadcrumb={[{ label: 'Dashboard', to: '/app' }, { label: 'Membership' }]} backTo={false}
       actions={<>
-        {!s.cancelled && <Button to="/app/membership/cancel" variant="ghost">Cancel membership</Button>}
-        <Button to="/app/membership/change">Change plan</Button>
+        {!s.cancelled && <Button title="Start cancelling your membership" to="/app/membership/cancel" variant="ghost">Cancel membership</Button>}
+        <Button title="Move to a different plan" to="/app/membership/change">Change plan</Button>
       </>}>
       <div className="grid gap-4 lg:grid-cols-3">
         <Card title="Current plan" icon={ShieldCheck}>
@@ -120,8 +120,8 @@ export function ChangePlanPage() {
       <PlanCards plans={config.membershipPlans || []} current={account.membershipPlan} selected={selected} onSelect={setSelected} />
       <StickyActions>
         <span className="mr-auto text-sm text-slate-600">{selected === account.membershipPlan ? 'This is your current plan.' : `New price: $${plan?.price}/month from your next bill.`}</span>
-        <Button variant="ghost" to="/app/membership">Cancel</Button>
-        <Button onClick={save} disabled={saving || selected === account.membershipPlan}>{saving ? 'Saving…' : 'Confirm plan change'}</Button>
+        <Button title="Go back without changing your plan" variant="ghost" to="/app/membership">Cancel</Button>
+        <Button title="Switch to the selected plan" onClick={save} disabled={saving || selected === account.membershipPlan}>{saving ? 'Saving…' : 'Confirm plan change'}</Button>
       </StickyActions>
     </Page>
   );
@@ -140,7 +140,7 @@ export function CancelMembershipPage() {
   if (s.cancelled) {
     return <Page title="Membership cancelled" width="medium" breadcrumb={[{ label: 'Membership', to: '/app/membership' }, { label: 'Cancel' }]}>
       <Alert tone="info">This membership is already cancelled. Choose a plan to restart priority attendance.</Alert>
-      <Button to="/app/membership/change" className="mt-4">Choose a plan</Button>
+      <Button title="Pick a membership plan" to="/app/membership/change" className="mt-4">Choose a plan</Button>
     </Page>;
   }
 
@@ -174,7 +174,7 @@ export function CancelMembershipPage() {
         </Card>
         <Card title="Before you go">
           <p className="text-sm text-slate-600">If the price is the issue, a smaller plan keeps priority attendance for less.</p>
-          <Button to="/app/membership/change" variant="secondary" className="mt-3">See smaller plans</Button>
+          <Button title="Compare cheaper plans before you cancel" to="/app/membership/change" variant="secondary" className="mt-3">See smaller plans</Button>
         </Card>
         <Card title="Why are you leaving? (optional)" className="md:col-span-2">
           <Field label="Reason"><textarea rows={2} className={inputCls} value={reason} onChange={e => setReason(e.target.value)} placeholder="Tell us what we could do better" /></Field>
@@ -185,8 +185,8 @@ export function CancelMembershipPage() {
         </Card>
       </div>
       <StickyActions>
-        <Button variant="secondary" to="/app/membership">Keep membership</Button>
-        <Button variant="danger" disabled={!confirmed || busy} onClick={cancel}>{busy ? 'Cancelling…' : 'Cancel membership'}</Button>
+        <Button title="Keep your membership and go back" variant="secondary" to="/app/membership">Keep membership</Button>
+        <Button title="Cancel your membership for good" variant="danger" disabled={!confirmed || busy} onClick={cancel}>{busy ? 'Cancelling…' : 'Cancel membership'}</Button>
       </StickyActions>
     </Page>
   );

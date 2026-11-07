@@ -105,7 +105,11 @@ export async function create(actor, body) {
     action: 'JOB_CREATED',
     entityType: 'EmergencyRequest',
     entityId: newJob.id,
-    diff: { jobNumber, organizationId, category: newJob.category, source }
+    diff: {
+      jobNumber, customerName: newJob.customerName, locationName: newJob.locationName, address: newJob.address, category: newJob.category,
+      description: newJob.description, affectedArea: newJob.affectedArea, onsiteContact: newJob.onsiteContact, onsitePhone: newJob.onsitePhone,
+      accessInstructions: newJob.accessInstructions, source
+    }
   });
   return parseJob(newJob);
 }

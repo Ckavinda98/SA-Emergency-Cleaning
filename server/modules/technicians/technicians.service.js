@@ -81,7 +81,7 @@ export async function create(actor, body) {
     return { tech, user };
   });
 
-  await recordAudit(actor, { action: 'TECHNICIAN_CREATED', entityType: 'Technician', entityId: tech.id, diff: { name: tech.name, phone: tech.phone, email: user.email } });
+  await recordAudit(actor, { action: 'TECHNICIAN_CREATED', entityType: 'Technician', entityId: tech.id, diff: { name: tech.name, phone: tech.phone, email: user.email, status: tech.status, rating: tech.rating } });
   return { ...tech, email: user.email, userId: user.id, tempPassword: body.password ? undefined : tempPassword };
 }
 
@@ -145,6 +145,6 @@ export async function remove(actor, id) {
     prisma.user.deleteMany({ where: { technicianId: id } }),
     prisma.technician.delete({ where: { id } })
   ]);
-  await recordAudit(actor, { action: 'TECHNICIAN_DELETED', entityType: 'Technician', entityId: before.id, diff: { name: before.name, phone: before.phone } });
+  await recordAudit(actor, { action: 'TECHNICIAN_DELETED', entityType: 'Technician', entityId: before.id, diff: { name: before.name, phone: before.phone, status: before.status, rating: before.rating } });
   return { success: true, message: 'Technician removed successfully' };
 }

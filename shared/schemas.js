@@ -4,45 +4,49 @@ import { z } from 'zod';
 import { JOB_STATUSES, TECHNICIAN_STATES } from './jobStatus.js';
 import { PLAN_IDS } from './config.js';
 
-const digits = (value) => String(value || '').replace(/[\s\-()+]/g, '');
+import { phoneError, emailError, passwordError, personNameError, textError, abnError } from './validation.js';
+
 const text = (min, message) => z.string({ required_error: message, invalid_type_error: message }).trim().min(min, message);
 
-export const emailField = (message = 'Please enter a valid email address.') =>
-  z.string({ required_error: message }).trim().toLowerCase().email(message);
+// Wraps a rule from shared/validation.js so the API gives the same message the form shows
+const rule = (check, opts) => z.any().superRefine((v, ctx) => {
+  const msg = check(v, opts);
+  if (msg) ctx.addIssue({ code: z.ZodIssueCode.custom, message: msg });
+});
+// Optional on update: checked only when a value is sent
+const optionalRule = (check, opts) => rule((v) => (v === undefined || v === null || v === '' ? '' : check(v, opts)));
 
-export const phoneField = (message = 'Please enter a valid phone number (8 to 12 digits).') =>
-  z.string({ required_error: message }).refine(v => /^\d{8,12}$/.test(digits(v)), message);
-
-export const abnField = z.string({ required_error: 'Validation Error: Australian Business Number (ABN) must be exactly 11 digits.' })
-  .refine(v => /^\d{11}$/.test(String(v).replace(/\s/g, '')), 'Validation Error: Australian Business Number (ABN) must be exactly 11 digits.');
-
-export const passwordField = z.string().min(8, 'New password must be at least 8 characters.');
+export const emailField = () => rule(emailError).transform(v => String(v).trim().toLowerCase());
+export const phoneField = () => rule(phoneError);
+export const abnField = rule(abnError, { required: true });
+export const passwordField = rule(passwordError);
 
 // POST /api/auth/register (public sign-up and admin "register company")
 export const registerSchema = z.object({
-  businessName: text(1, 'Missing required fields.'),
-  primaryContactName: text(1, 'Missing required fields.'),
-  phoneNumber: text(1, 'Missing required fields.'),
-  email: emailField('Missing required fields.'),
-  password: z.string({ required_error: 'Missing required fields.' }).min(8, 'Password must be at least 8 characters.')
+  businessName: rule(textError, { label: 'Company name' }),
+  primaryContactName: rule(personNameError, { label: 'Primary contact name' }),
+  phoneNumber: phoneField(),
+  email: emailField(),
+  password: passwordField
 }).passthrough();
 
 // POST /api/customers (admin adds a company)
 export const customerCreateSchema = z.object({
-  businessName: text(2, 'Validation Error: Business/Company name is required (at least 2 characters).'),
+  businessName: rule(textError, { label: 'Company name' }),
   abn: abnField,
-  primaryContactName: text(2, 'Validation Error: Primary contact person name is required.'),
-  phoneNumber: phoneField('Validation Error: Please provide a valid phone number (8 to 12 digits).'),
-  email: emailField('Validation Error: Please enter a valid business email address.')
+  primaryContactName: rule(personNameError, { label: 'Primary contact name' }),
+  phoneNumber: phoneField(),
+  email: emailField()
 }).passthrough();
 
 // PUT /api/customers/:id/profile
 export const profileSchema = z.object({
-  businessName: z.string().optional(),
-  primaryContactName: z.string().optional(),
-  phoneNumber: z.string().optional(),
-  email: z.union([emailField(), z.literal('')]).optional(),
-  password: z.union([passwordField, z.literal(''), z.null()]).optional()
+  businessName: optionalRule(textError, { label: 'Company name' }),
+  primaryContactName: optionalRule(personNameError, { label: 'Primary contact name' }),
+  phoneNumber: optionalRule(phoneError),
+  abn: optionalRule(abnError),
+  email: optionalRule(emailError),
+  password: optionalRule(passwordError)
 }).passthrough();
 
 // PUT /api/customers/:id/plan
@@ -52,15 +56,20 @@ export const planSchema = z.object({
 
 // POST /api/customers/:id/locations and PUT /api/locations/:id
 export const siteCreateSchema = z.object({
-  name: text(1, 'Location name and street address are required.'),
-  address: text(1, 'Location name and street address are required.')
+  name: rule(textError, { label: 'Site name' }),
+  address: rule(textError, { label: 'Street address', min: 4 }),
+  contactName: optionalRule(personNameError, { label: 'Site contact name' }),
+  contactPhone: optionalRule(phoneError)
 }).passthrough();
+
+// PUT /api/locations/:id: only the fields sent are checked
+export const siteUpdateSchema = siteCreateSchema.partial();
 
 // POST /api/jobs
 export const jobCreateSchema = z.object({
-  description: text(1, 'Description, on-site contact and on-site phone are required.'),
-  onsiteContact: text(1, 'Description, on-site contact and on-site phone are required.'),
-  onsitePhone: text(1, 'Description, on-site contact and on-site phone are required.')
+  description: text(1, 'Please describe what happened.'),
+  onsiteContact: rule(personNameError, { label: 'On-site contact name' }),
+  onsitePhone: phoneField()
 }).passthrough();
 
 // PATCH /api/jobs/:id/status
@@ -72,9 +81,9 @@ export const jobStatusSchema = z.object({
 
 // POST /api/technicians
 export const technicianCreateSchema = z.object({
-  name: text(2, 'Technician name is required (at least 2 characters).'),
+  name: rule(personNameError, { label: 'Technician name' }),
   phone: phoneField(),
-  email: z.union([emailField(), z.literal('')]).optional()
+  email: optionalRule(emailError)
 }).passthrough();
 
 // PATCH /api/technicians/:id/status
@@ -84,9 +93,9 @@ export const technicianStatusSchema = z.object({
 
 // PUT /api/technicians/:id/profile
 export const technicianProfileSchema = z.object({
-  name: z.string().optional(),
-  phone: z.string().optional(),
-  password: z.union([passwordField, z.literal(''), z.null()]).optional()
+  name: optionalRule(personNameError, { label: 'Name' }),
+  phone: optionalRule(phoneError),
+  password: optionalRule(passwordError)
 }).passthrough();
 
 // POST /api/redemptions
@@ -106,4 +115,10 @@ export const configSchema = z.object({
     required_error: 'Configuration must include at least one membership plan.',
     invalid_type_error: 'Configuration must include at least one membership plan.'
   }).min(1, 'Configuration must include at least one membership plan.')
+}).passthrough();
+
+// PUT /api/technicians/:id (admin edits a technician)
+export const technicianUpdateSchema = z.object({
+  name: optionalRule(personNameError, { label: 'Technician name' }),
+  phone: optionalRule(phoneError)
 }).passthrough();
