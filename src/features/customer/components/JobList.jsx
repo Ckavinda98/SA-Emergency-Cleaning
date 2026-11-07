@@ -10,16 +10,16 @@ export function JobList({ jobs, linkTo, showCustomer = false, emptyTitle = 'No r
   if (!jobs.length) return <EmptyState title={emptyTitle} action={emptyAction}>{emptyText}</EmptyState>;
   return (
     <>
-      <table className="hidden w-full text-left text-sm md:table">
-        <thead className="sticky top-0 z-[1] bg-white">
-          <tr className="border-b border-slate-200 text-[11px] font-bold uppercase tracking-wide text-slate-500">
-            <th className="py-2.5 pr-3 font-bold">Job</th>
-            {showCustomer && <th className="py-2.5 pr-3 font-bold">Customer</th>}
-            <th className="py-2.5 pr-3 font-bold">Incident & site</th>
-            <th className="py-2.5 pr-3 font-bold">Status</th>
-            {!compact && <th className="hidden py-2.5 pr-3 font-bold lg:table-cell">Technician</th>}
-            {!compact && <th className="hidden py-2.5 pr-3 font-bold xl:table-cell">Submitted</th>}
-            <th className="w-6" />
+      <table className="hidden w-full text-left text-sm md:table border-separate border-spacing-0">
+        <thead className="sticky top-0 z-[1]">
+          <tr className="text-[11px] font-bold uppercase tracking-wide text-slate-500">
+            <th className="sticky top-0 z-[1] bg-white py-2.5 pr-3 font-bold border-b border-slate-200">Job</th>
+            {showCustomer && <th className="sticky top-0 z-[1] bg-white py-2.5 pr-3 font-bold border-b border-slate-200">Customer</th>}
+            <th className="sticky top-0 z-[1] bg-white py-2.5 pr-3 font-bold border-b border-slate-200">Incident & site</th>
+            <th className="sticky top-0 z-[1] bg-white py-2.5 pr-3 font-bold border-b border-slate-200">Status</th>
+            {!compact && <th className="hidden py-2.5 pr-3 font-bold lg:table-cell sticky top-0 z-[1] bg-white border-b border-slate-200">Technician</th>}
+            {!compact && <th className="hidden py-2.5 pr-3 font-bold xl:table-cell sticky top-0 z-[1] bg-white border-b border-slate-200">Submitted</th>}
+            <th className="sticky top-0 z-[1] bg-white w-6 border-b border-slate-200" />
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-100">

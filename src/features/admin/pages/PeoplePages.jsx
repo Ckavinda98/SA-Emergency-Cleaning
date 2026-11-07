@@ -53,10 +53,14 @@ export function CustomersPage() {
       <Card className="fit:min-h-0 fit:flex-1" bodyClassName="fit:flex-1 fit:overflow-y-auto">
         {shown.length === 0 ? <EmptyState title="No customers match" /> : (
           <>
-            <table className="hidden w-full text-left text-sm md:table">
-              <thead className="sticky top-0 bg-white"><tr className="border-b border-slate-200 text-[11px] font-bold uppercase tracking-wide text-slate-500">
-                <th className="py-2.5 pr-3">Business</th><th className="py-2.5 pr-3">Contact</th><th className="py-2.5 pr-3">Plan</th>
-                <th className="hidden py-2.5 pr-3 lg:table-cell">Call-outs used</th><th className="hidden py-2.5 pr-3 lg:table-cell">Points</th><th className="py-2.5 pr-3">Status</th>
+            <table className="hidden w-full text-left text-sm md:table border-separate border-spacing-0">
+              <thead className="sticky top-0 z-10"><tr className="text-[11px] font-bold uppercase tracking-wide text-slate-500">
+                <th className="sticky top-0 z-10 bg-white py-2.5 pr-3 border-b border-slate-200">Business</th>
+                <th className="sticky top-0 z-10 bg-white py-2.5 pr-3 border-b border-slate-200">Contact</th>
+                <th className="sticky top-0 z-10 bg-white py-2.5 pr-3 border-b border-slate-200">Plan</th>
+                <th className="hidden py-2.5 pr-3 lg:table-cell sticky top-0 z-10 bg-white border-b border-slate-200">Call-outs used</th>
+                <th className="hidden py-2.5 pr-3 lg:table-cell sticky top-0 z-10 bg-white border-b border-slate-200">Points</th>
+                <th className="sticky top-0 z-10 bg-white py-2.5 pr-3 border-b border-slate-200">Status</th>
               </tr></thead>
               <tbody className="divide-y divide-slate-100">
                 {shown.map(c => (
