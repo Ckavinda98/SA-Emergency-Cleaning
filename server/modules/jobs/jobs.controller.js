@@ -8,3 +8,13 @@ export const edit = async (req, res) => res.json(await service.edit(actorOf(req)
 export const changeStatus = async (req, res) => res.json(await service.changeStatus(actorOf(req), req.params.id, req.body));
 export const resetAll = async (req, res) => res.json(await service.resetAll(actorOf(req)));
 export const updateExtension = async (req, res) => res.json(await service.updateExtension(actorOf(req), req.params.id, req.body));
+export const acknowledge = async (req, res) => res.json(await service.acknowledge(actorOf(req), req.params.id));
+export const triage = async (req, res) => res.json(await service.triage(actorOf(req), req.params.id, req.body));
+export const decideQuote = async (req, res) => res.json(await service.decideQuote(actorOf(req), req.params.id, req.body));
+export const cancel = async (req, res) => res.json(await service.cancel(actorOf(req), req.params.id));
+export const updateSiteRecord = async (req, res) => res.json(await service.updateSiteRecord(actorOf(req), req.params.id, req.body));
+export const reclassify = async (req, res) => res.json(await service.reclassify(actorOf(req), req.params.id, req.body));
+export const missedAccess = async (req, res) => res.json(await service.missedAccess(actorOf(req), req.params.id, req.body));
+export const issueReport = async (req, res) => res.json(await service.issueReport(actorOf(req), req.params.id));
+export const goodwill = async (req, res) => res.json(await service.goodwill(actorOf(req), req.params.id));
+export const reattend = async (req, res) => res.json(await service.reattend(actorOf(req), req.params.id, req.body));

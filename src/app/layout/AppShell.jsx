@@ -10,6 +10,7 @@ import { useAppData } from '@/app/AppData.jsx';
 import { useBreakpoint, cx } from '@/shared/ui/index.jsx';
 import { NAV, ADMIN_VIEWS, MOBILE_TABS } from './nav.js';
 import { tabForPath } from '@shared/roles.js';
+import { COMPANY } from '@shared/membership.js';
 
 const SIDEBAR_KEY = 'sacc_sidebar_hidden';
 
@@ -139,7 +140,7 @@ function Header({ onToggle, expanded }) {
       <Link to="/" className="flex min-w-0 shrink-0 items-center gap-2.5 md:shrink">
         <span className="flex h-10 items-center rounded-lg bg-[#e4e4e4] px-1.5"><img src="/logo.webp" alt="" className="h-7 w-auto" /></span>
         <span className="hidden min-w-0 leading-tight sm:block">
-          <span className="block truncate text-sm font-extrabold text-slate-900 md:text-base">SA Emergency Cleaning</span>
+          <span className="block truncate text-sm font-extrabold text-slate-900 md:text-base">SA Commercial Cleaning</span>
           <span className="hidden truncate text-[11px] font-semibold text-brand sm:block">24/7 Response Desk</span>
         </span>
       </Link>
@@ -221,7 +222,7 @@ function AvatarMenu({ user, onLogout }) {
               <User className="h-4 w-4 text-brand" /> Profile
             </button>
           )}
-          <button role="menuitem" title="Sign out of SA Emergency Cleaning" onClick={() => { setOpen(false); onLogout(); }} className="flex w-full items-center gap-2 px-4 py-2.5 text-left font-medium text-red-600 hover:bg-red-50 cursor-pointer">
+          <button role="menuitem" title="Sign out of SA Commercial Cleaning" onClick={() => { setOpen(false); onLogout(); }} className="flex w-full items-center gap-2 px-4 py-2.5 text-left font-medium text-red-600 hover:bg-red-50 cursor-pointer">
             <LogOut className="h-4 w-4" /> Log out
           </button>
         </div>
@@ -288,7 +289,12 @@ function SidebarContent({ role, onLogout }) {
         </>
       )}
       <div className="flex-1" />
-      <button title="Sign out of SA Emergency Cleaning" onClick={onLogout} className="mt-4 flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-red-600 hover:bg-red-50 cursor-pointer">
+      <div className="mt-4 rounded-xl bg-red-50 px-3 py-2 text-xs text-red-900">
+        <div className="font-bold uppercase tracking-wide">24/7 hotline</div>
+        <a href={`tel:${COMPANY.hotlineTel}`} className="text-sm font-extrabold underline">{COMPANY.hotline}</a>
+        <div className="mt-1 text-[10px] leading-tight text-slate-500">{COMPANY.legalName} · ABN {COMPANY.abn}</div>
+      </div>
+      <button title="Sign out of SA Commercial Cleaning" onClick={onLogout} className="mt-4 flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold text-red-600 hover:bg-red-50 cursor-pointer">
         <LogOut className="h-[18px] w-[18px]" /> Log out
       </button>
     </div>

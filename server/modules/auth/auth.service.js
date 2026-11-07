@@ -6,7 +6,11 @@ import { HttpError, badRequest } from '../../lib/httpError.js';
 import { hashPassword, checkPassword } from '../../lib/passwords.js';
 import { recordLogin } from '../../lib/loginLog.js';
 import { recordAudit } from '../../lib/audit.js';
-import { isAdelaideLocation } from '../../../shared/location.js';
+import { isAdelaideLocation, ADELAIDE_ERROR } from '../../../shared/location.js';
+import { getConfig } from '../config/config.service.js';
+import { newMemberFields, recordMembershipPayment } from '../../lib/membership.js';
+import { creditPoints } from '../../lib/points.js';
+import { areaFields } from '../customers/customers.service.js';
 
 
 function issueTokens(user) {
@@ -40,9 +44,9 @@ export async function register(actor, body) {
   const { businessName, abn, primaryContactName, phoneNumber, email, password, membershipPlan, paymentType, address, locationName } = body;
 
   const targetAddress = address || locationName || '';
-  if (!isAdelaideLocation(targetAddress)) {
-    throw badRequest('Location Error: Service is currently restricted exclusively to Adelaide, South Australia locations (Postcodes 5000-5199).');
-  }
+  const config = await getConfig();
+  // Metro Adelaide sites are covered; other SA sites are accepted at SACC's discretion with travel (cl. 18)
+  if (!isAdelaideLocation(targetAddress, config)) throw badRequest(ADELAIDE_ERROR);
 
   const normEmail = email.toLowerCase();
   if (await prisma.user.findUnique({ where: { email: normEmail } })) {
@@ -60,20 +64,19 @@ export async function register(actor, body) {
           phoneNumber,
           email: normEmail,
           membershipPlan: membershipPlan || 'business',
-          paymentMethod: 'PayTo Bank Direct',
+          paymentMethod: paymentType === 'CARD' ? 'Card (secure payment link)' : 'PayTo Bank Direct',
           paymentType: paymentType || 'DIRECT_DEBIT',
           subscriptionStatus: 'ACTIVE',
-          consecutiveMonths: 1,
-          pointsBalance: 100,
-          calloutsUsed: 0,
+          ...(await newMemberFields(tx, config, body)),
           locations: {
             create: [{
               name: locationName || 'Primary Adelaide Site',
               address: targetAddress,
               contactName: primaryContactName,
               contactPhone: phoneNumber,
-              accessInstructions: 'Main Entrance Keypad / Reception Desk',
-              securityNotes: 'Standard Commercial Site - Adelaide SA'
+              accessInstructions: body.accessInstructions || null,
+              securityNotes: null,
+              ...areaFields(targetAddress, config)
             }]
           }
         },
@@ -82,6 +85,8 @@ export async function register(actor, body) {
       const user = await tx.user.create({
         data: { email: normEmail, password: hashedPassword, name: primaryContactName, role: 'CUSTOMER', organizationId: customer.id }
       });
+      // The first payment is the Activation Date (cl. 1): fee invoice, fee points and any referral reward
+      await recordMembershipPayment(tx, customer, config, { creditPoints });
       return { customer, user };
     });
 
@@ -89,7 +94,7 @@ export async function register(actor, body) {
       action: 'COMPANY_REGISTERED',
       entityType: 'Organization',
       entityId: customer.id,
-      diff: { businessName, membershipPlan: customer.membershipPlan, email: customer.email }
+      diff: { businessName, membershipPlan: customer.membershipPlan, email: customer.email, billingFrequency: customer.billingFrequency, membershipNumber: customer.membershipNumber, serviceArea: customer.locations[0]?.serviceArea, referredBy: customer.referredById ? 'yes' : 'no' }
     });
 
     return { success: true, message: `Company ${businessName} registered successfully!`, customer };

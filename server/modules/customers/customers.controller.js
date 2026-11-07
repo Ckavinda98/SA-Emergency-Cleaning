@@ -10,3 +10,5 @@ export const cancelSubscription = async (req, res) => res.json(await service.can
 export const remove = async (req, res) => res.json(await service.remove(actorOf(req), req.params.id));
 export const addSite = async (req, res) => res.json(await service.addSite(actorOf(req), req.params.id, req.body));
 export const updateSite = async (req, res) => res.json(await service.updateSite(actorOf(req), req.params.id, req.body));
+export const paymentStatus = async (req, res) => res.json(await service.paymentStatus(actorOf(req), req.params.id, req.body));
+export const pointsHistory = async (req, res) => res.json(await service.pointsHistory(actorOf(req), req.params.id));

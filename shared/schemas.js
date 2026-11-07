@@ -100,13 +100,14 @@ export const technicianProfileSchema = z.object({
 
 // POST /api/redemptions
 export const redemptionCreateSchema = z.object({
-  serviceCode: z.string({ required_error: 'Unknown redemption service.' }),
-  quantity: z.coerce.number({ invalid_type_error: 'Quantity must be more than zero.' }).positive('Quantity must be more than zero.')
+  serviceCode: z.string({ required_error: 'Please choose a service.' })
 }).passthrough();
 
 // PATCH /api/redemptions/:id/status
 export const redemptionDecisionSchema = z.object({
-  status: z.enum(['APPROVED', 'REJECTED'], { errorMap: () => ({ message: 'Status must be APPROVED or REJECTED.' }) })
+  status: z.enum(['APPROVED', 'REJECTED', 'CANCELLED'], { errorMap: () => ({ message: 'Status must be APPROVED, REJECTED or CANCELLED.' }) }),
+  quoteAmount: z.any().optional(),
+  scheduledFor: z.any().optional()
 });
 
 // PUT /api/config

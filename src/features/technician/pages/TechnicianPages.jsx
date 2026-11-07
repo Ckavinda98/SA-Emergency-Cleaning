@@ -2,16 +2,18 @@
 // Phones are the main device here, so the next status action is a big button pinned to the bottom.
 import React, { useMemo, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { Wrench, Navigation, Phone, MapPin, CheckCircle2, Clock, Star, FileText, User, AlertTriangle, Save, Lock, ChevronRight, Truck, Sparkles, Flag, Check, ArrowRight } from 'lucide-react';
+import { Wrench, Navigation, Phone, MapPin, CheckCircle2, Clock, Star, FileText, User, Save, Lock, ChevronRight, Truck, Sparkles, Flag, Check, ArrowRight } from 'lucide-react';
 import { useAppData, isTechniciansJob } from '@/app/AppData.jsx';
 import { API_BASE } from '@/shared/config/env.js';
 import { Page, Card, Kpi, Button, Tabs, Badge, InfoRow, Field, Alert, EmptyState, StickyActions, inputCls, useToast, useBreakpoint, cx, useFieldErrors } from '@/shared/ui/index.jsx';
 import { PhoneInput, PasswordInput } from '@/shared/ui/inputs.jsx';
 import { phoneError, passwordError, confirmPasswordError, personNameError } from '@shared/validation.js';
-import { StatusChip, MapEmbed, MediaStrip, isCompleted, formatDateTime, hasTech } from '@/shared/ui/jobs.jsx';
+import { StatusChip, MapEmbed, MediaStrip, isCompleted, formatDateTime, targetText } from '@/shared/ui/jobs.jsx';
+import { onSiteMissing, HAZARDS, WATER_TYPES } from '@shared/membership.js';
+import { OnSiteRecord, MissedAccessForm, ReclassifyForm } from '../components/OnSiteRecord.jsx';
 
 const AWAITING = ['NEW', 'SUBMITTED', 'TECH_ASSIGNED', 'TECHNICIAN_ASSIGNED'];
-const ONGOING = ['ACCEPTED', 'TRAVELLING', 'ARRIVED', 'IN_PROGRESS'];
+const ONGOING = ['ACCEPTED', 'TRAVELLING', 'ARRIVED', 'IN_PROGRESS', 'CONVERTED_TO_QUOTE'];
 
 // Next step in the technician workflow for each status. Each step has its own colour, icon and
 // a one-line hint, so the button visibly changes as the job moves on.
@@ -19,9 +21,9 @@ const ACCEPT = { to: 'ACCEPTED', label: 'Accept job', short: 'Accept', icon: Che
 const NEXT = {
   NEW: ACCEPT, SUBMITTED: ACCEPT, TECH_ASSIGNED: ACCEPT, TECHNICIAN_ASSIGNED: ACCEPT,
   ACCEPTED: { to: 'TRAVELLING', label: 'Start travelling', short: 'Start travel', icon: Truck, cls: 'bg-indigo-600 hover:bg-indigo-700 text-white', hint: 'Tap when you leave for the site. The customer sees you on the map.' },
-  TRAVELLING: { to: 'ARRIVED', label: "I've arrived on site", short: 'Arrived', icon: MapPin, cls: 'bg-amber-500 hover:bg-amber-600 text-white', hint: 'Tap when you reach the site.' },
-  ARRIVED: { to: 'IN_PROGRESS', label: 'Start cleaning', short: 'Start cleaning', icon: Sparkles, cls: 'bg-orange-500 hover:bg-orange-600 text-white', hint: 'Tap when you start work. The cleaning timer starts.' },
-  IN_PROGRESS: { to: 'COMPLETED', label: 'Complete job', short: 'Complete', icon: Flag, cls: 'bg-emerald-600 hover:bg-emerald-700 text-white', hint: 'Tap when the clean-up is finished. The service report is created.' }
+  TRAVELLING: { to: 'ARRIVED', label: "I've arrived on site", short: 'Arrived', icon: MapPin, cls: 'bg-amber-500 hover:bg-amber-600 text-white', hint: 'Tap when you reach the site. Then take before photos and measure the area.' },
+  ARRIVED: { to: 'IN_PROGRESS', label: 'Start cleaning', short: 'Start cleaning', icon: Sparkles, cls: 'bg-orange-500 hover:bg-orange-600 text-white', hint: 'Needs before photos and the measured area. The labour timer starts.' },
+  IN_PROGRESS: { to: 'COMPLETED', label: 'Complete job', short: 'Complete', icon: Flag, cls: 'bg-emerald-600 hover:bg-emerald-700 text-white', hint: 'Needs after photos and the site sign-off. The office then issues the service report.' }
 };
 const WORKFLOW = [
   { s: 'ACCEPTED', label: 'Accepted' }, { s: 'TRAVELLING', label: 'Travelling' }, { s: 'ARRIVED', label: 'Arrived' },
@@ -97,7 +99,7 @@ export function TechJobsPage() {
   const { notify } = useToast();
   const onAdvanced = (job, next) => {
     if (next.to === 'ACCEPTED') { setTab('ongoing'); notify(`${job.jobNumber} accepted. It's now in Active. Next: start travelling.`); }
-    else if (next.to === 'COMPLETED') notify(`${job.jobNumber} completed. The service report is ready in History.`);
+    else if (next.to === 'COMPLETED') notify(`${job.jobNumber} completed. The office will issue the service report.`);
     else notify(`${job.jobNumber}: ${next.label.toLowerCase()} done.`);
     setHighlight(job.id);
     setTimeout(() => setHighlight(h => (h === job.id ? null : h)), 2500);
@@ -142,7 +144,10 @@ function TechJobCard({ job, highlight, onAdvanced }) {
   const step = stepOf(job.status);
   const [busy, setBusy] = useState(false);
   const [confirming, setConfirming] = useState(false);
+  const { notify } = useToast();
   const advance = async () => {
+    const missing = next && onSiteMissing(job, next.to);
+    if (missing) { notify(missing, 'warning'); navigate(`/tech/jobs/${job.id}#onsite`); return; }
     setBusy(true);
     const ok = await update(job, next.to);
     setBusy(false);
@@ -179,7 +184,7 @@ function TechJobCard({ job, highlight, onAdvanced }) {
         <div className="mt-3 grid grid-cols-3 gap-2">
           <Button size="sm" variant="secondary" icon={Navigation} href={`https://maps.google.com/?q=${encodeURIComponent(job.address || '')}`} target="_blank" rel="noreferrer" title="Get directions to the site in Google Maps">Navigate</Button>
           <Button size="sm" variant="secondary" icon={Phone} href={`tel:${job.onsitePhone || ''}`} title={`Call the on-site contact${job.onsitePhone ? ` on ${job.onsitePhone}` : ''}`}>Call</Button>
-          {next ? <NextButton next={next} size="sm" short busy={busy} onClick={finishing ? () => setConfirming(true) : advance} />
+          {next ? <NextButton next={next} size="sm" short busy={busy} onClick={finishing && !onSiteMissing(job, 'COMPLETED') ? () => setConfirming(true) : advance} />
             : <Button size="sm" variant="secondary" icon={ArrowRight} to={`/tech/jobs/${job.id}`} title="Open the job">Open</Button>}
         </div>
       )}
@@ -201,13 +206,15 @@ export function TechJobDetailPage() {
 
   const next = NEXT[job.status];
   const go = async (status) => {
+    const missing = onSiteMissing(job, status);
+    if (missing) { notify(missing, 'warning'); document.getElementById('onsite')?.scrollIntoView({ behavior: 'smooth' }); setConfirming(false); return; }
     setBusy(true);
     const ok = await update(job, status);
     setBusy(false);
     setConfirming(false);
     if (!ok) return;
     const after = NEXT[status];
-    notify(status === 'COMPLETED' ? 'Job completed. The service report is ready.' : after ? `Saved. Next step: ${after.label}.` : 'Status updated.');
+    notify(status === 'COMPLETED' ? 'Job completed. The office will issue the service report.' : after ? `Saved. Next step: ${after.label}.` : 'Status updated.');
   };
 
   // Completing a job can't be undone, so it asks once before saving.
@@ -217,14 +224,14 @@ export function TechJobDetailPage() {
       <Button title="Yes: finish the job and create the service report" variant="success" disabled={busy} onClick={() => go('COMPLETED')}>{busy ? 'Saving…' : 'Yes, complete'}</Button>
       <Button title="Keep the job open" variant="ghost" onClick={() => setConfirming(false)}>Not yet</Button>
     </div>
-  ) : <NextButton next={next} busy={busy} onClick={() => (next.to === 'COMPLETED' ? setConfirming(true) : go(next.to))} />);
+  ) : <NextButton next={next} busy={busy} onClick={() => (next.to === 'COMPLETED' && !onSiteMissing(job, 'COMPLETED') ? setConfirming(true) : go(next.to))} />);
 
   return (
     <Page title={`${job.category} · ${job.customerName}`} subtitle={job.address}
       breadcrumb={[{ label: 'My jobs', to: '/tech/jobs' }, { label: job.jobNumber }]}
       actions={<>
         <StatusChip status={job.status} />
-        {isCompleted(job.status) && <Button title="Open the service report for this job" to={`/tech/jobs/${job.id}/report`} icon={FileText}>Service report</Button>}
+        {job.reportIssuedAt && <Button title="Open the service report for this job" to={`/tech/jobs/${job.id}/report`} icon={FileText}>Service report {job.reportNumber}</Button>}
       </>}>
       <div className="grid gap-4 lg:grid-cols-[1fr_1fr]">
         <div className="space-y-4">
@@ -235,15 +242,21 @@ export function TechJobDetailPage() {
                 <div className="text-xs font-bold uppercase tracking-wide text-slate-500">Next step</div>
                 <div className="mt-0.5 text-sm font-semibold text-slate-900">{next.label}</div>
                 <p className="text-xs text-slate-500">{next.hint}</p>
+                {onSiteMissing(job, next.to) && <p className="mt-1 text-xs font-semibold text-amber-700">{onSiteMissing(job, next.to)}</p>}
                 {bp !== 'mobile' && <div className="mt-3">{nextButton}</div>}
               </div>
             )}
             {isCompleted(job.status) && (
               <div className="mt-4 flex items-center gap-2 rounded-xl bg-emerald-50 p-3 text-sm font-semibold text-emerald-800"><CheckCircle2 className="h-5 w-5" />Job completed. Well done.</div>
             )}
-            {job.status === 'ARRIVED' && (
-              <Button title="Tell dispatch you cannot get into the site" variant="danger-soft" size="sm" className="mt-3" icon={AlertTriangle} disabled={busy} onClick={() => go('UNABLE_TO_ACCESS')}>Can't get in (unable to access)</Button>
+            {['ARRIVED', 'IN_PROGRESS'].includes(job.status) && (
+              <div className="mt-3 flex flex-col gap-2">
+                {job.status === 'ARRIVED' && <MissedAccessForm job={job} />}
+                <ReclassifyForm job={job} />
+              </div>
             )}
+            {job.status === 'CONVERTED_TO_QUOTE' && <Alert tone="warning" className="mt-3">Outside membership cover{job.quoteAmount ? `: quote $${job.quoteAmount} + GST` : ''}. Waiting for the member to accept. Do not continue work until the job is back on your queue.</Alert>}
+            {job.status === 'UNABLE_TO_ACCESS' && <Alert tone="danger" className="mt-3">Missed access recorded. Dispatch will contact the member.</Alert>}
             {job.status === 'IN_PROGRESS' && job.timerMinutes !== undefined && <p className="mt-3 text-xs text-slate-500">Cleaning for {job.timerMinutes} min.</p>}
           </Card>
           <Card title="Customer and site" icon={User}>
@@ -267,9 +280,13 @@ export function TechJobDetailPage() {
             <div className="mt-3 flex flex-wrap gap-2">
               <Badge tone={job.isSafeToAccess === false ? 'danger' : 'success'}>{job.isSafeToAccess === false ? 'Hazards reported' : 'Safe to access'}</Badge>
               <Badge tone={job.isOngoing ? 'warning' : 'slate'}>{job.isOngoing ? 'Still ongoing' : 'Contained'}</Badge>
-              {job.affectedArea ? <Badge>{job.affectedArea} m²</Badge> : null}
+              {job.affectedArea ? <Badge>{job.affectedArea} m² reported</Badge> : null}
+              {job.waterType && <Badge tone="indigo">{WATER_TYPES.find(w => w.id === job.waterType)?.label || job.waterType}</Badge>}
+              {(job.hazards || []).map(h => <Badge key={h} tone="danger">{HAZARDS.find(x => x.id === h)?.label || h}</Badge>)}
             </div>
+            {job.triageNotes && <p className="mt-2 text-xs text-slate-600"><b>Office notes:</b> {job.triageNotes}</p>}
           </Card>
+          {['ARRIVED', 'IN_PROGRESS', 'COMPLETED', 'REPORT_ISSUED'].includes(job.status) && <OnSiteRecord job={job} />}
         </div>
         <div className="space-y-4">
           <Card title="What happened">
@@ -279,7 +296,7 @@ export function TechJobDetailPage() {
           <Card title="Map" icon={MapPin} bodyClassName="flex flex-col">
             <MapEmbed address={job.address} interactive className="h-64 lg:h-80" />
           </Card>
-          <p className="text-xs text-slate-500">Submitted {formatDateTime(job.submittedAt || job.createdAt)} · target attendance within 2–4 hours</p>
+          <p className="text-xs text-slate-500">Submitted {formatDateTime(job.submittedAt || job.createdAt)} · target arrival {targetText(job)}</p>
         </div>
       </div>
       {bp === 'mobile' && next && (

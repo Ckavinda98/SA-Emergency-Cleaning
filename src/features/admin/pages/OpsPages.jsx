@@ -8,6 +8,7 @@ import { Page, Card, Kpi, Button, Tabs, Badge, Field, Alert, EmptyState, StickyA
 import { PhoneInput, AddressAutocomplete } from '@/shared/ui/inputs.jsx';
 import { phoneError, personNameError, textError } from '@shared/validation.js';
 import { formatDateTime, isCompleted } from '@/shared/ui/jobs.jsx';
+import { fmtMoney } from '@/shared/ui/membership.jsx';
 
 /* ------------------------------------------------------------------ Rewards queue */
 
@@ -26,12 +27,12 @@ export function RewardsQueuePage() {
   };
   useEffect(() => { load(); }, []);
 
-  const decide = async (r, status) => {
+  const decide = async (r, status, extra = {}) => {
     try {
-      const res = await fetch(`${API_BASE}/redemptions/${r.id}/status`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status }) });
+      const res = await fetch(`${API_BASE}/redemptions/${r.id}/status`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ status, ...extra }) });
       const d = await res.json();
       if (!res.ok) return notify(d.error || 'The decision could not be saved.', 'danger');
-      notify(status === 'APPROVED' ? `Approved: ${r.calculatedPoints} pts taken from ${r.organization?.businessName}.` : 'Redemption declined.');
+      notify(status === 'APPROVED' ? `Booked: ${d.redemption?.calculatedPoints ?? 0} pts used${d.redemption?.balanceDue ? `, ${fmtMoney(d.redemption.balanceDue)} + GST invoiced` : ''}.` : status === 'CANCELLED' ? 'Booking cancelled. Points returned.' : 'Request declined.');
       load(); loadData();
     } catch { notify('Cannot reach the server. Nothing was changed.', 'danger'); }
   };
@@ -41,35 +42,54 @@ export function RewardsQueuePage() {
   const approvedThisMonth = items.filter(r => r.status === 'APPROVED' && new Date(r.updatedAt || r.createdAt).getMonth() === month);
 
   return (
-    <Page fit title="Reward redemptions" subtitle="Points are only taken from the customer when you approve">
+    <Page fit title="Reward redemptions" subtitle="Quote the service and book it. Points (1 point = $1) are taken at booking.">
       <div className="grid shrink-0 grid-cols-2 gap-3 md:grid-cols-3">
         <Kpi label="Waiting" value={items.filter(r => r.status === 'PENDING_APPROVAL').length} icon={Clock} tone="warning" to="?tab=PENDING_APPROVAL" title="Show redemptions waiting for your decision" />
-        <Kpi label="Approved this month" value={approvedThisMonth.length} icon={CheckCircle2} tone="success" to="?tab=APPROVED" title="Show approved redemptions" />
-        <Kpi label="Points used this month" value={approvedThisMonth.reduce((n, r) => n + (r.calculatedPoints || 0), 0)} icon={Gift} tone="rewards" className="col-span-2 md:col-span-1" to="?tab=APPROVED" title="Show approved redemptions" />
+        <Kpi label="Booked this month" value={approvedThisMonth.length} icon={CheckCircle2} tone="success" to="?tab=APPROVED" title="Show booked redemptions" />
+        <Kpi label="Points used this month" value={approvedThisMonth.reduce((n, r) => n + (r.calculatedPoints || 0), 0)} icon={Gift} tone="rewards" className="col-span-2 md:col-span-1" to="?tab=APPROVED" title="Show booked redemptions" />
       </div>
       <Card title="Requests" icon={Gift} className="mt-4 fit:min-h-0 fit:flex-1" bodyClassName="fit:flex-1 fit:overflow-y-auto"
-        actions={<Tabs value={tab} onChange={setTab} tabs={[{ key: 'PENDING_APPROVAL', label: 'Waiting' }, { key: 'APPROVED', label: 'Approved' }, { key: 'REJECTED', label: 'Declined' }, { key: 'all', label: 'All' }]} />}>
+        actions={<Tabs value={tab} onChange={setTab} tabs={[{ key: 'PENDING_APPROVAL', label: 'To quote' }, { key: 'APPROVED', label: 'Booked' }, { key: 'REJECTED', label: 'Declined' }, { key: 'CANCELLED', label: 'Cancelled' }, { key: 'all', label: 'All' }]} />}>
         {loading ? <p className="text-sm text-slate-500">Loading…</p> : shown.length === 0 ? <EmptyState title="Nothing here" /> : (
           <ul className="divide-y divide-slate-100">
-            {shown.map(r => (
-              <li key={r.id} className="flex flex-col gap-2 py-3 md:flex-row md:items-center">
-                <div className="min-w-0 flex-1">
-                  <div className="text-sm font-semibold text-slate-900">{r.organization?.businessName} · {r.serviceName}</div>
-                  <div className="text-xs text-slate-500">{r.quantity} at {r.location?.name || 'site'} · {formatDateTime(r.createdAt)} · balance {r.organization?.pointsBalance ?? '–'} pts</div>
-                </div>
-                <span className="text-sm font-bold text-purple-700">{r.calculatedPoints} pts</span>
-                {r.status === 'PENDING_APPROVAL' ? (
-                  <span className="flex flex-wrap gap-2">
-                    <Button size="sm" variant="success" onClick={() => decide(r, 'APPROVED')} title={`Approve and take ${r.calculatedPoints} points from ${r.organization?.businessName}`}>Approve</Button>
-                    <InlineConfirm label="Decline" title="Decline this redemption. No points are taken." message="Decline?" confirmLabel="Decline" onConfirm={() => decide(r, 'REJECTED')} />
-                  </span>
-                ) : <Badge tone={r.status === 'APPROVED' ? 'success' : 'danger'}>{r.status === 'APPROVED' ? 'Approved' : 'Declined'}</Badge>}
-              </li>
-            ))}
+            {shown.map(r => <RedemptionRow key={r.id} r={r} decide={decide} />)}
           </ul>
         )}
       </Card>
     </Page>
+  );
+}
+
+const R_STATUS = { APPROVED: ['Booked', 'success'], REJECTED: ['Declined', 'danger'], CANCELLED: ['Cancelled', 'slate'] };
+
+function RedemptionRow({ r, decide }) {
+  const [quote, setQuote] = useState('');
+  const [date, setDate] = useState('');
+  const balance = r.organization?.pointsBalance ?? 0;
+  const price = Number(quote) || 0;
+  return (
+    <li className="flex flex-col gap-2 py-3">
+      <div className="flex flex-col gap-1 md:flex-row md:items-center">
+        <div className="min-w-0 flex-1">
+          <div className="text-sm font-semibold text-slate-900">{r.organization?.businessName} · {r.serviceName}</div>
+          <div className="text-xs text-slate-500">{r.location?.name || 'site'}{r.notes ? ` · ${r.notes}` : ''} · {formatDateTime(r.createdAt)} · balance {balance} pts</div>
+          {r.quoteAmount ? <div className="text-xs text-slate-600">Price {fmtMoney(r.quoteAmount)}{r.discountPercent ? ` less ${r.discountPercent}% loyalty` : ''} · {r.calculatedPoints} pts used{r.balanceDue ? ` · ${fmtMoney(r.balanceDue)} + GST invoiced` : ''}{r.scheduledFor ? ` · booked for ${new Date(r.scheduledFor).toLocaleDateString('en-AU')}` : ''}</div> : null}
+        </div>
+        {r.status !== 'PENDING_APPROVAL' && <Badge tone={R_STATUS[r.status]?.[1] || 'slate'}>{R_STATUS[r.status]?.[0] || r.status}</Badge>}
+        {r.status === 'APPROVED' && <InlineConfirm label="Cancel booking" message="SACC cancels: the points go back to the member." confirmLabel="Cancel booking" onConfirm={() => decide(r, 'CANCELLED')} />}
+      </div>
+      {r.status === 'PENDING_APPROVAL' && (
+        <div className="flex flex-wrap items-end gap-2 rounded-xl bg-slate-50 p-2">
+          <Field label="Price ex GST ($)"><input type="number" min="1" className={cx(inputCls, 'h-9 w-32')} value={quote} onChange={e => setQuote(e.target.value)} /></Field>
+          <Field label="Booked for"><input type="date" className={cx(inputCls, 'h-9')} value={date} onChange={e => setDate(e.target.value)} /></Field>
+          <span className="pb-2 text-xs text-slate-500">{price ? `Uses up to ${Math.min(balance, Math.floor(price))} pts (less any loyalty discount)` : 'Enter SACC\'s price'}</span>
+          <span className="ml-auto flex gap-2 pb-0.5">
+            <Button size="sm" variant="success" disabled={!price} onClick={() => decide(r, 'APPROVED', { quoteAmount: price, scheduledFor: date || undefined })} title="Book the service and take the points">Book</Button>
+            <InlineConfirm label="Decline" title="Decline this request. No points are taken." message="Decline?" confirmLabel="Decline" onConfirm={() => decide(r, 'REJECTED')} />
+          </span>
+        </div>
+      )}
+    </li>
   );
 }
 
@@ -191,7 +211,8 @@ export function HotlinePage() {
   const { errors, check, clear, setErrors } = useFieldErrors();
   const edit = (setter, field) => (v) => { setter(v); clear(field); };
   const plan = (config.membershipPlans || []).find(p => p.id === org?.membershipPlan);
-  const left = plan ? Math.max(0, plan.callouts - (org?.calloutsUsed || 0)) : null;
+  const siteInfo = org?.membership?.sites?.find(x => x.id === site?.id);
+  const left = siteInfo ? siteInfo.remaining : org?.membership ? org.membership.remaining : null;
 
   const pickOrg = (id) => {
     setOrgId(id); setErrors({});
@@ -274,7 +295,7 @@ export function HotlinePage() {
               <dl className="space-y-2 text-sm">
                 <div className="font-semibold text-slate-900">{org.businessName}</div>
                 <div className="text-slate-600">{plan?.name} plan · {org.phoneNumber}</div>
-                <Badge tone={left ? 'success' : 'warning'}>{left === null ? '' : left ? `${left} call-out(s) left` : 'No call-outs left (extra fee applies)'}</Badge>
+                <Badge tone={left ? 'success' : 'warning'}>{left === null ? '' : left ? `${left} call-out(s) left` : `No included call-outs left at this site ($${config.additionalCalloutFee} + GST additional call-out)`}</Badge>
               </dl>
             ) : <p className="text-sm text-slate-500">Choose a customer.</p>}
           </Card>

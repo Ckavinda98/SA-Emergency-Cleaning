@@ -26,19 +26,25 @@ describe('admin: technicians, customers, points', () => {
     expect((await api('delete', `/customers/${res.body.id}`, s.admin.accessToken)).status).toBe(200);
   });
 
-  it('works out redemption points on the server and deducts them once', async () => {
+  it('uses 1 point = $1 against the quoted price, deducts at booking and restores if SACC cancels', async () => {
     const orgId = s.mahima.user.businessId;
     const site = (await api('get', `/customers/${orgId}`, s.mahima.accessToken)).body.locations[0];
-    const req = await api('post', '/redemptions', s.mahima.accessToken).send({ locationId: site.id, serviceCode: 'carpet_steam', quantity: 10, calculatedPoints: 1 });
+    const req = await api('post', '/redemptions', s.mahima.accessToken).send({ locationId: site.id, serviceCode: 'carpet_steam', notes: 'Boardroom', calculatedPoints: 1 });
     expect(req.status).toBe(200);
-    expect(req.body.redemption.calculatedPoints).toBe(50);
+    expect(req.body.redemption.calculatedPoints).toBe(0);
 
     const before = (await api('get', `/customers/${orgId}`, s.admin.accessToken)).body.pointsBalance;
     const id = req.body.redemption.id;
-    expect((await api('patch', `/redemptions/${id}/status`, s.mahima.accessToken).send({ status: 'APPROVED' })).status).toBe(403);
-    expect((await api('patch', `/redemptions/${id}/status`, s.admin.accessToken).send({ status: 'APPROVED' })).status).toBe(200);
-    expect((await api('patch', `/redemptions/${id}/status`, s.admin.accessToken).send({ status: 'APPROVED' })).status).toBe(409);
+    expect((await api('patch', `/redemptions/${id}/status`, s.mahima.accessToken).send({ status: 'APPROVED', quoteAmount: 120 })).status).toBe(403);
+    expect((await api('patch', `/redemptions/${id}/status`, s.admin.accessToken).send({ status: 'APPROVED' })).status).toBe(400);
+    const booked = await api('patch', `/redemptions/${id}/status`, s.admin.accessToken).send({ status: 'APPROVED', quoteAmount: 120 });
+    expect(booked.status).toBe(200);
+    expect(booked.body.redemption.calculatedPoints).toBe(120);
+    expect((await api('patch', `/redemptions/${id}/status`, s.admin.accessToken).send({ status: 'APPROVED', quoteAmount: 120 })).status).toBe(409);
     const after = (await api('get', `/customers/${orgId}`, s.admin.accessToken)).body.pointsBalance;
-    expect(before - after).toBe(50);
+    expect(before - after).toBe(120);
+    expect((await api('patch', `/redemptions/${id}/status`, s.admin.accessToken).send({ status: 'CANCELLED' })).status).toBe(200);
+    expect((await api('get', `/customers/${orgId}`, s.admin.accessToken)).body.pointsBalance).toBe(before);
   });
+
 });

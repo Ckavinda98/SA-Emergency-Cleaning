@@ -16,6 +16,8 @@ router.put('/customers/:id/profile', customerOrStaff, validate(profileSchema), c
 router.put('/customers/:id/plan', customerOrStaff, validate(planSchema), controller.changePlan);
 router.post('/customers/:id/cancel-subscription', customerOrAdmin, controller.cancelSubscription);
 router.delete('/customers/:id', customerOrAdmin, controller.remove);
+router.post('/customers/:id/payment-status', requireRole('ADMIN'), controller.paymentStatus);
+router.get('/customers/:id/points', controller.pointsHistory);
 
 // Sites (locations) of a company
 router.post('/customers/:id/locations', customerOrAdmin, validate(siteCreateSchema), controller.addSite);

@@ -8,6 +8,6 @@ const router = Router();
 
 router.get('/redemptions', requireRole('CUSTOMER', 'ADMIN'), controller.list);
 router.post('/redemptions', requireRole('CUSTOMER', 'ADMIN'), validate(redemptionCreateSchema), controller.create);
-router.patch('/redemptions/:id/status', requireRole('ADMIN'), validate(redemptionDecisionSchema), controller.decide);
+router.patch('/redemptions/:id/status', requireRole('CUSTOMER', 'ADMIN'), validate(redemptionDecisionSchema), controller.decide);
 
 export default router;

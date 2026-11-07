@@ -35,10 +35,20 @@ describe('emergency job lifecycle', () => {
     expect(assign.status).toBe(200);
     expect((await api('patch', `/jobs/${job.id}/status`, s.chris.accessToken).send({ status: 'IN_PROGRESS' })).status).toBe(400);
     expect((await api('patch', `/jobs/${job.id}/status`, s.admin.accessToken).send({ status: 'NOT_A_STATUS' })).status).toBe(400);
-    for (const status of ['ACCEPTED', 'TRAVELLING', 'ARRIVED', 'IN_PROGRESS', 'COMPLETED']) {
+    for (const status of ['ACCEPTED', 'TRAVELLING', 'ARRIVED']) {
       const res = await api('patch', `/jobs/${job.id}/status`, s.chris.accessToken).send({ status });
       expect(res.status, status).toBe(200);
     }
+    // SOP: before photos and the measured area come before work starts
+    const blocked = await api('patch', `/jobs/${job.id}/status`, s.chris.accessToken).send({ status: 'IN_PROGRESS' });
+    expect(blocked.status).toBe(400);
+    expect(blocked.body.error).toMatch(/before photo/);
+    expect((await api('patch', `/jobs/${job.id}/site`, s.chris.accessToken).send({ beforePhotos: ['data:image/png;base64,AAAA'], measuredArea: 4 })).status).toBe(200);
+    expect((await api('patch', `/jobs/${job.id}/status`, s.chris.accessToken).send({ status: 'IN_PROGRESS' })).status).toBe(200);
+    // After photos and the site representative's sign-off come before completion
+    expect((await api('patch', `/jobs/${job.id}/status`, s.chris.accessToken).send({ status: 'COMPLETED' })).status).toBe(400);
+    expect((await api('patch', `/jobs/${job.id}/site`, s.chris.accessToken).send({ afterPhotos: ['data:image/png;base64,BBBB'], siteRepName: 'Ross Lee', siteRepSignature: 'data:image/png;base64,CCCC', checklist: { areaSafe: true } })).status).toBe(200);
+    expect((await api('patch', `/jobs/${job.id}/status`, s.chris.accessToken).send({ status: 'COMPLETED' })).status).toBe(200);
   });
 
   it('stores the timeline, labour times and technician status', async () => {
@@ -56,8 +66,11 @@ describe('emergency job lifecycle', () => {
     expect((await request(app).get(`/api/jobs/${job.id}/pdf-report?token=${s.mahima.accessToken}`)).status).toBe(403);
     const res = await request(app).get(`/api/jobs/${job.id}/pdf-report?token=${s.ross.accessToken}`);
     expect(res.status).toBe(200);
-    expect(res.text).toContain('PASSED');
-    expect(res.text).not.toContain('Not recorded');
+    expect(res.text).toContain('SA Commercial Cleaning Services Pty Ltd');
+    expect(res.text).toContain('Charges summary');
+    expect(res.text).toContain('Ross Lee');
+    expect(res.text).toContain('0498 352 839');
+    expect(res.text).not.toContain('SA Emergency Cleaning');
   });
 
   it('writes the changes to AuditLog', async () => {

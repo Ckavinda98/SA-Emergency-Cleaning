@@ -11,6 +11,7 @@ import { phoneError, emailError, personNameError, numberError, textError, abnErr
 import { SitesSection } from '@/features/customer/pages/AccountPage.jsx';
 import { JobList } from '@/features/customer/components/JobList.jsx';
 import { Avatar, TechStatusBadge } from './DispatchPages.jsx';
+import { fmtDate, fmtMoney, LoyaltyBadge } from '@/shared/ui/membership.jsx';
 
 /* ------------------------------------------------------------------ Customers */
 
@@ -68,9 +69,9 @@ export function CustomersPage() {
                     <td className="py-3 pr-3"><div className="font-semibold text-slate-900">{c.businessName}</div><div className="text-xs text-slate-500">ABN {c.abn} · {(c.locations || []).length} site(s)</div></td>
                     <td className="py-3 pr-3"><div className="text-slate-800">{c.primaryContactName || c.primaryContact}</div><div className="text-xs text-slate-500">{c.phoneNumber || c.phone}</div></td>
                     <td className="py-3 pr-3 font-semibold capitalize text-brand-dark">{c.membershipPlan}</td>
-                    <td className="hidden py-3 pr-3 lg:table-cell">{c.calloutsUsed ?? 0}</td>
+                    <td className="hidden py-3 pr-3 lg:table-cell">{c.membership ? `${c.membership.used} / ${c.membership.included}` : c.calloutsUsed ?? 0}</td>
                     <td className="hidden py-3 pr-3 font-semibold text-purple-700 lg:table-cell">{c.pointsBalance ?? 0}</td>
-                    <td className="py-3 pr-3"><Badge tone={c.subscriptionStatus === 'CANCELLED' ? 'danger' : 'success'}>{c.subscriptionStatus === 'CANCELLED' ? 'Cancelled' : 'Active'}</Badge></td>
+                    <td className="py-3 pr-3"><MemberStatus c={c} /></td>
                   </tr>
                 ))}
               </tbody>
@@ -110,15 +111,15 @@ export function CustomerDetailPage() {
         {isAdmin && <Button variant="secondary" icon={Eye} title="See the app exactly as this customer sees it" onClick={() => { setSelectedCustomerId(c.id); navigate('/app'); }}>Open customer view</Button>}
       </>}>
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Kpi label="Plan" value={plan?.name || c.membershipPlan} sub={plan ? `$${plan.price}/mo` : ''} to="?tab=overview" title="Show the account details" />
-        <Kpi label="Call-outs used" value={`${c.calloutsUsed ?? 0} / ${plan?.callouts ?? '–'}`} tone="success" to="?tab=jobs" title="Show this customer's jobs" />
+        <Kpi label="Plan" value={plan?.name || c.membershipPlan} sub={c.membership ? `${fmtMoney(c.membership.fee.monthly)} + GST/mo${c.membership.fee.discountPercent ? ` (${c.membership.fee.discountPercent}% multi-site)` : ''}` : ''} to="?tab=overview" title="Show the account details" />
+        <Kpi label="Call-outs this month" value={`${c.membership?.used ?? 0} / ${c.membership?.included ?? '–'}`} sub={c.membership?.bonusCallouts ? `+${c.membership.bonusCallouts} Gold bonus` : `resets in ${c.membership?.daysUntilReset ?? '–'} days`} tone="success" to="?tab=sites" title="Show call-outs per site" />
         <Kpi label="Points" value={c.pointsBalance ?? 0} tone="rewards" to={isAdmin ? '/admin/rewards?tab=all' : historyLink('Organization', c.id)} title={isAdmin ? 'Open reward redemptions' : 'See the changes made to this customer'} />
         <Kpi label="Jobs" value={theirJobs.length} tone="slate" to="?tab=jobs" title="Show this customer's jobs" />
       </div>
       <Tabs className="mt-4" value={tab} onChange={setTab} tabs={[{ key: 'overview', label: 'Overview' }, { key: 'sites', label: 'Sites', count: (c.locations || []).length }, { key: 'jobs', label: 'Jobs', count: theirJobs.length }]} />
       <div className="mt-3">
-        {tab === 'overview' && <CustomerEditForm key={c.id} customer={c} />}
-        {tab === 'sites' && <SitesSection account={c} allowAdd={isAdmin} />}
+        {tab === 'overview' && <><MembershipAdminCard customer={c} canEdit={isAdmin} /><div className="mt-4"><CustomerEditForm key={c.id} customer={c} /></div></>}
+        {tab === 'sites' && <><SiteScheduleCard customer={c} /><div className="mt-4"><SitesSection account={c} allowAdd={isAdmin} /></div></>}
         {tab === 'jobs' && <Card title="Jobs" icon={ClipboardList}><JobList jobs={theirJobs} linkTo={jobLink} /></Card>}
       </div>
     </Page>
@@ -131,7 +132,7 @@ function CustomerEditForm({ customer: c }) {
   const { notify } = useToast();
   const initial = {
     businessName: c.businessName || '', abn: c.abn || '', primaryContactName: c.primaryContactName || c.primaryContact || '',
-    phoneNumber: c.phoneNumber || c.phone || '', email: c.email || '', membershipPlan: c.membershipPlan || ''
+    phoneNumber: c.phoneNumber || c.phone || '', email: c.email || '', membershipPlan: c.membershipPlan || '', billingFrequency: c.billingFrequency || 'MONTHLY'
   };
   const [form, setForm] = useState(initial);
   const [saving, setSaving] = useState(false);
@@ -181,16 +182,21 @@ function CustomerEditForm({ customer: c }) {
           <Field label="Primary contact" required error={errors.primaryContactName}><input className={inputCls} value={form.primaryContactName} onChange={set('primaryContactName')} /></Field>
           <Field label="Phone" required error={errors.phoneNumber}><PhoneInput value={form.phoneNumber} onChange={setVal('phoneNumber')} /></Field>
           <Field label="Email (login)" required error={errors.email}><input type="email" className={inputCls} value={form.email} onChange={set('email')} /></Field>
-          <Field label="Membership plan">
+          <Field label="Membership plan" hint="Upgrades apply now (pro-rata); downgrades from the next billing period">
             <select className={inputCls} value={form.membershipPlan} onChange={set('membershipPlan')}>
-              {(config.membershipPlans || []).map(p => <option key={p.id} value={p.id}>{p.name} (${p.price}/month)</option>)}
+              {(config.membershipPlans || []).map(p => <option key={p.id} value={p.id}>{p.name} (${p.price} + GST/month)</option>)}
+            </select>
+          </Field>
+          <Field label="Billing">
+            <select className={inputCls} value={form.billingFrequency} onChange={set('billingFrequency')}>
+              <option value="MONTHLY">Monthly direct debit</option><option value="ANNUAL">Annually in advance</option>
             </select>
           </Field>
         </div>
         <dl className="mt-4 grid gap-3 border-t border-slate-100 pt-4 sm:grid-cols-3">
           <InfoRow label="Payment method">{c.paymentMethod}</InfoRow>
-          <InfoRow label="Membership">{c.subscriptionStatus === 'CANCELLED' ? 'Cancelled' : 'Active'}</InfoRow>
-          <InfoRow label="Member for">{c.consecutiveMonths ?? 0} months</InfoRow>
+          <InfoRow label="Membership"><MemberStatus c={c} /></InfoRow>
+          <InfoRow label="Member for">{c.membership?.monthsActive ?? 0} months</InfoRow>
         </dl>
       </Card>
       <StickyActions>
@@ -369,5 +375,115 @@ export function TechnicianFormPage() {
         </div>
       </form>
     </Page>
+  );
+}
+
+function MemberStatus({ c }) {
+  if (c.subscriptionStatus === 'CANCELLED') return <Badge tone="danger">Cancelled</Badge>;
+  if (c.subscriptionStatus === 'SUSPENDED') return <Badge tone="danger">Suspended</Badge>;
+  if (c.paymentNoticeAt) return <Badge tone="warning">Payment failed</Badge>;
+  if (c.membership?.inWaitingPeriod) return <Badge tone="indigo">Waiting period</Badge>;
+  return <Badge tone="success">Active</Badge>;
+}
+
+// Membership Schedule and billing (Agreement cl. 3, 4, 5, 15) for the admin desk
+function MembershipAdminCard({ customer: c, canEdit }) {
+  const { upsertCustomer } = useAppData();
+  const { notify } = useToast();
+  const m = c.membership || {};
+  const payment = async (failed) => {
+    try {
+      const res = await fetch(`${API_BASE}/customers/${c.id}/payment-status`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ failed }) });
+      const data = await res.json();
+      if (!res.ok) { notify(data.error || 'Not saved.', 'danger'); return; }
+      upsertCustomer(data);
+      notify(failed ? 'Failed payment recorded. The member is suspended after 7 days if unpaid.' : 'Payment recorded. The membership is active.');
+    } catch { notify('Cannot reach the server.', 'danger'); }
+  };
+  return (
+    <Card title="Membership and billing" icon={ClipboardList} actions={<LoyaltyBadge level={m.loyaltyLevel} />}>
+      <dl className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+        <InfoRow label="Membership number">{c.membershipNumber}</InfoRow>
+        <InfoRow label="Activated">{fmtDate(m.activationDate)}</InfoRow>
+        <InfoRow label="Waiting period">{m.inWaitingPeriod ? `Until ${fmtDate(m.waitingPeriodEnds)}` : 'Finished'}</InfoRow>
+        <InfoRow label="Minimum term ends">{fmtDate(m.termEnds)}</InfoRow>
+        <InfoRow label="Billing">{m.billingFrequency === 'ANNUAL' ? 'Annually' : 'Monthly'}: {fmtMoney(m.periodFee)} + GST</InfoRow>
+        <InfoRow label="Next billing">{fmtDate(m.nextBillingDate)}</InfoRow>
+        <InfoRow label="Rates locked until">{fmtDate(m.ratesLockedUntil)}</InfoRow>
+        <InfoRow label="Referral code">{c.referralCode}</InfoRow>
+        {m.pendingPlan && <InfoRow label="Scheduled change">{m.pendingPlan} from {fmtDate(m.pendingPlanFrom)}</InfoRow>}
+        {c.paymentNoticeAt && <InfoRow label="Payment failed on">{fmtDate(c.paymentNoticeAt)}</InfoRow>}
+        {c.cancellationReview && <InfoRow label="Review">Unpaid over 30 days: review for cancellation</InfoRow>}
+      </dl>
+      {canEdit && c.subscriptionStatus !== 'CANCELLED' && (
+        <div className="mt-3 flex flex-wrap gap-2 border-t border-slate-100 pt-3">
+          {c.paymentNoticeAt || c.subscriptionStatus === 'SUSPENDED'
+            ? <Button size="sm" variant="success" onClick={() => payment(false)} title="The overdue fee has been paid">Record payment received</Button>
+            : <InlineConfirm label="Record failed payment" message="Starts the 7-day notice before suspension (cl. 4.4)." confirmLabel="Record" onConfirm={() => payment(true)} />}
+        </div>
+      )}
+    </Card>
+  );
+}
+
+// Per-site plan, call-outs and outside-metro approval (cl. 17, 18). Only SACC staff change these.
+function SiteScheduleCard({ customer: c }) {
+  const { config, upsertCustomer } = useAppData();
+  const { notify } = useToast();
+  const [km, setKm] = useState({});
+  const sites = c.membership?.sites || [];
+  const saveSite = async (id, body) => {
+    try {
+      const res = await fetch(`${API_BASE}/locations/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      const data = await res.json();
+      if (!res.ok) { notify(data.error || 'Not saved.', 'danger'); return; }
+      const r2 = await fetch(`${API_BASE}/customers/${c.id}`);
+      if (r2.ok) upsertCustomer(await r2.json());
+      notify('Site saved.');
+    } catch { notify('Cannot reach the server.', 'danger'); }
+  };
+  if (!sites.length) return null;
+  return (
+    <Card title="Membership Schedule by site" icon={MapPin}>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead><tr className="text-left text-xs uppercase text-slate-500"><th className="py-1 pr-3">Site</th><th className="pr-3">Plan</th><th className="pr-3">Call-outs</th><th className="pr-3">Area</th><th>Travel (km each way)</th></tr></thead>
+          <tbody>
+            {sites.map(s => {
+              const loc = (c.locations || []).find(l => l.id === s.id) || {};
+              const outside = s.serviceArea && s.serviceArea !== 'METRO';
+              return (
+                <tr key={s.id} className="border-t border-slate-100 align-middle">
+                  <td className="py-2 pr-3 font-semibold text-slate-900">{s.name}</td>
+                  <td className="pr-3">
+                    <select className={cx(inputCls, 'h-9 py-0')} value={loc.membershipPlan || ''} onChange={e => saveSite(s.id, { membershipPlan: e.target.value })}>
+                      <option value="">Account plan</option>
+                      {(config.membershipPlans || []).map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+                    </select>
+                  </td>
+                  <td className="pr-3 tabular-nums">{s.used} / {s.included}</td>
+                  <td className="pr-3">
+                    {outside ? (
+                      <label className="flex items-center gap-1.5 whitespace-nowrap">
+                        <input type="checkbox" checked={Boolean(s.areaApproved)} onChange={e => saveSite(s.id, { areaApproved: e.target.checked })} />
+                        <Badge tone={s.areaApproved ? 'success' : 'warning'}>{s.areaApproved ? 'Outside metro: approved' : 'Outside metro: approve?'}</Badge>
+                      </label>
+                    ) : <Badge tone="success">Metro</Badge>}
+                  </td>
+                  <td>
+                    {outside ? (
+                      <div className="flex items-center gap-2">
+                        <input type="number" min="0" className={cx(inputCls, 'h-9 w-24')} value={km[s.id] ?? s.travelKm ?? ''} onChange={e => setKm(k => ({ ...k, [s.id]: e.target.value }))} />
+                        <Button size="sm" variant="secondary" disabled={km[s.id] === undefined} onClick={() => saveSite(s.id, { travelKm: km[s.id] })}>Save</Button>
+                      </div>
+                    ) : <span className="text-slate-400">No travel charge</span>}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </Card>
   );
 }

@@ -1,16 +1,13 @@
-// Service area: Adelaide, South Australia only (postcodes 5000-5199). Shared by the web app and the API.
-export const ADELAIDE_SUBURBS = [
-  'Adelaide', 'North Adelaide', 'Port Adelaide', 'Norwood', 'Unley', 'Glenelg',
-  'Mawson Lakes', 'Marion', 'Salisbury', 'Elizabeth', 'Prospect', 'Modbury',
-  'Campbelltown', 'Burnside', 'Mitcham', 'Glen Osmond', 'St Peters', 'Henley Beach',
-  'Semaphor', 'West Lakes', 'Golden Grove', 'Mount Barker', 'Gawler', 'Christies Beach'
-];
+// Service area (Agreement cl. 18): the Adelaide metro area, plus sites elsewhere in South Australia
+// that SACC accepts at its discretion with a travel charge. Shared by the web app and the API.
+import { serviceArea } from './membership.js';
 
-export const ADELAIDE_ERROR = 'Location Error: Service is restricted to Adelaide, South Australia (postcodes 5000-5199).';
+export const ADELAIDE_ERROR = 'Location Error: SACC services sites in South Australia only. Please enter an SA address with its postcode.';
 
-export function isAdelaideLocation(addressText) {
+// True for any site SACC can accept (metro, or outside metro for approval)
+export function isAdelaideLocation(addressText, config) {
   if (!addressText) return false;
-  const lower = addressText.toLowerCase();
-  if (lower.includes('adelaide') || lower.includes('sa 5') || lower.includes('south australia')) return true;
-  return ADELAIDE_SUBURBS.some(suburb => lower.includes(suburb.toLowerCase()));
+  return serviceArea(addressText, config) !== 'OUTSIDE_SA';
 }
+
+export const isMetroLocation = (addressText, config) => serviceArea(addressText, config) === 'METRO';

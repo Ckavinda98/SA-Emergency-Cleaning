@@ -1,12 +1,21 @@
 // W14 Dispatch desk, W15 Job detail + assign technician, W16 Live technician map.
 // Replaces the dispatch tab, AdminJobDetailsModal, AssignDispatchModal and LiveTechnicianMapModal.
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom';
-import { Radio, Search, Users, MapPin, Phone, FileText, CheckCircle2, Clock, AlertTriangle, Truck, Map as MapIcon, User, Camera, ShieldAlert, ArrowLeft, RefreshCw } from 'lucide-react';
+import { Radio, Search, Users, MapPin, Phone, FileText, CheckCircle2, Clock, AlertTriangle, Truck, Map as MapIcon, User, Camera, ShieldAlert, ArrowLeft, RefreshCw, ClipboardCheck, Receipt, Gift, ListChecks } from 'lucide-react';
 import { useAppData } from '@/app/AppData.jsx';
 import { API_BASE } from '@/shared/config/env.js';
 import { Page, Card, Kpi, Button, Tabs, Badge, InfoRow, Field, EmptyState, inputCls, useToast, cx } from '@/shared/ui/index.jsx';
-import { StatusChip, SlaTimeline, MapEmbed, MediaStrip, isCompleted, isFinished, isLive, isNewJob, hasTech, formatDateTime } from '@/shared/ui/jobs.jsx';
+import { StatusChip, SlaTimeline, MapEmbed, MediaStrip, isCompleted, isFinished, isLive, isNewJob, hasTech, formatDateTime, ChargesTable, TriageBadge, targetText } from '@/shared/ui/jobs.jsx';
+import { useJobAction } from '@/app/useJobAction.js';
+import { fmtDate, fmtMoney } from '@/shared/ui/membership.jsx';
+import { TRIAGE, WATER_TYPES, HAZARDS, surchargeFor, insideServiceWindow, inWaitingPeriod } from '@shared/membership.js';
+
+// Dispatch priority (cl. 13.3): Premium, Business, Essential, then non-members; within a tier, by acknowledgment time
+const queueOrder = (a, b) => (isFinished(a.status) - isFinished(b.status))
+  || (isFinished(a.status) ? new Date(b.submittedAt || 0) - new Date(a.submittedAt || 0) : 0)
+  || ((a.priorityTier || 4) - (b.priorityTier || 4))
+  || new Date(a.acknowledgedAt || a.submittedAt || 0) - new Date(b.acknowledgedAt || b.submittedAt || 0);
 import { JobList } from '@/features/customer/components/JobList.jsx';
 
 const ACTIVE = ['ACCEPTED', 'TECH_ASSIGNED', 'TECHNICIAN_ASSIGNED', 'TRAVELLING', 'ARRIVED', 'IN_PROGRESS'];
@@ -29,6 +38,7 @@ export function DispatchPage() {
 
   const counts = {
     newJobs: jobs.filter(j => isNewJob(j.status)).length,
+    toTriage: jobs.filter(j => !isFinished(j.status) && (!j.acknowledgedAt || !j.triage || j.triage === 'GREY_AREA')).length,
     unassigned: jobs.filter(j => !isFinished(j.status) && !hasTech(j)).length,
     enRoute: jobs.filter(j => j.status === 'TRAVELLING').length,
     onSite: jobs.filter(j => ['ARRIVED', 'IN_PROGRESS'].includes(j.status)).length,
@@ -38,6 +48,7 @@ export function DispatchPage() {
   const shown = useMemo(() => jobs.filter(j => {
     if (filter === 'open' && isFinished(j.status)) return false;
     if (filter === 'new' && !isNewJob(j.status)) return false;
+    if (filter === 'triage' && (isFinished(j.status) || (j.acknowledgedAt && j.triage && j.triage !== 'GREY_AREA'))) return false;
     if (filter === 'active' && !ACTIVE.includes(j.status)) return false;
     if (filter === 'done' && !isCompleted(j.status)) return false;
     if (filter === 'unassigned' && (isFinished(j.status) || hasTech(j))) return false;
@@ -45,7 +56,7 @@ export function DispatchPage() {
     if (filter === 'onsite' && !['ARRIVED', 'IN_PROGRESS'].includes(j.status)) return false;
     if (q && !`${j.jobNumber} ${j.customerName} ${j.locationName} ${j.category} ${j.technicianName}`.toLowerCase().includes(q.toLowerCase())) return false;
     return true;
-  }).sort((a, b) => (hasTech(a) - hasTech(b)) || new Date(b.submittedAt || 0) - new Date(a.submittedAt || 0)), [jobs, filter, q]);
+  }).sort(queueOrder), [jobs, filter, q]);
 
   const live = jobs.find(j => isLive(j.status));
   const available = technicians.filter(t => t.status === 'AVAILABLE');
@@ -57,17 +68,18 @@ export function DispatchPage() {
         <Button to="/admin/map" variant="secondary" icon={MapIcon} title="See where every technician and job is on the map">Live map</Button>
       </>}>
       <div className="grid shrink-0 grid-cols-2 gap-3 sm:grid-cols-3 xl:grid-cols-5">
-        <Kpi label="New" value={counts.newJobs} icon={Radio} tone="brand" to={tile('new')} title="Show new requests waiting for dispatch" />
+        <Kpi label="To acknowledge / triage" value={counts.toTriage} icon={Radio} tone={counts.toTriage ? 'danger' : 'brand'} to={tile('triage')} title="Requests SACC has not acknowledged or triaged yet" />
         <Kpi label="Unassigned" value={counts.unassigned} icon={AlertTriangle} tone={counts.unassigned ? 'danger' : 'slate'} to={tile('unassigned')} title="Show open jobs with no technician yet" />
         <Kpi label="On the way" value={counts.enRoute} icon={Truck} tone="brand" className="hidden sm:block" to={tile('travelling')} title="Show jobs where the technician is travelling" />
         <Kpi label="On site" value={counts.onSite} icon={MapPin} tone="warning" className="hidden xl:block" to={tile('onsite')} title="Show jobs where the technician is on site" />
         <Kpi label="Completed" value={counts.done} icon={CheckCircle2} tone="success" className="hidden xl:block" to={tile('done')} title="Show completed jobs" />
       </div>
+      <AttentionStrip jobs={jobs} />
       <div className="mt-4 grid gap-4 xl:grid-cols-[1fr_320px] fit:min-h-0 fit:flex-1 fit:grid-rows-[minmax(0,1fr)]">
-        <Card title="Job queue" icon={Radio} className="fit:min-h-0" bodyClassName="fit:flex-1 fit:overflow-y-auto"
+        <Card title="Job queue (by plan priority)" icon={Radio} className="fit:min-h-0" bodyClassName="fit:flex-1 fit:overflow-y-auto"
           actions={<>
             <Tabs value={filter} onChange={v => setParams({ status: v })} tabs={[
-              { key: 'open', label: 'Open' }, { key: 'new', label: 'New', count: counts.newJobs }, { key: 'active', label: 'Active' }, { key: 'done', label: 'Done', count: counts.done }, { key: 'all', label: 'All', count: jobs.length },
+              { key: 'open', label: 'Open' }, { key: 'triage', label: 'Triage', count: counts.toTriage }, { key: 'new', label: 'New', count: counts.newJobs }, { key: 'active', label: 'Active' }, { key: 'done', label: 'Done', count: counts.done }, { key: 'all', label: 'All', count: jobs.length },
               ...(EXTRA_FILTERS[filter] ? [{ key: filter, label: EXTRA_FILTERS[filter] }] : [])
             ]} />
             <label className="relative w-full sm:w-56">
@@ -109,8 +121,9 @@ export function Avatar({ tech, size = 'h-9 w-9' }) {
 
 export function AdminJobPage() {
   const { jobId } = useParams();
-  const { jobs, technicians, upsertJob, reloadTechnicians, loaded } = useAppData();
+  const { jobs, technicians, upsertJob, reloadTechnicians, loaded, customers, config } = useAppData();
   const { notify } = useToast();
+  const act = useJobAction();
   const job = jobs.find(j => j.id === jobId);
   const [tech, setTech] = useState(null);
   const [status, setStatus] = useState(null);
@@ -128,6 +141,8 @@ export function AdminJobPage() {
   const sorted = [...technicians].sort((a, b) => (a.name === current ? -2 : a.status === 'AVAILABLE' ? -1 : 1) - (b.name === current ? -2 : b.status === 'AVAILABLE' ? -1 : 1));
   const unchanged = chosenTech === current && chosenStatus === job.status && current === job.technicianName;
   const nextUnassigned = jobs.find(j => j.id !== job.id && isNewJob(j.status) && !hasTech(j));
+  const org = customers.find(c => c.id === job.organizationId);
+  const readyToDispatch = job.triage === 'COVERED' || job.quoteStatus === 'ACCEPTED';
 
   const assign = async () => {
     setBusy(true);
@@ -153,8 +168,11 @@ export function AdminJobPage() {
       actions={<>
         <StatusChip status={job.status} />
         {isLive(job.status) && <Button title="Follow the technician's location on the map" to={`/admin/map?job=${job.id}`} variant="secondary" icon={MapIcon}>Track live</Button>}
-        {isCompleted(job.status) && <Button title="Open the service report for this job" to={`/admin/jobs/${job.id}/report`} icon={FileText}>Service report</Button>}
+        {!job.acknowledgedAt && !isFinished(job.status) && <Button title="Acknowledge the request: starts the 2–4 hour response clock" variant="emergency" icon={ClipboardCheck} onClick={() => act(job, 'acknowledge', {}, 'Acknowledged. The response clock has started.')}>Acknowledge</Button>}
+        {(isCompleted(job.status) || job.status === 'UNABLE_TO_ACCESS' || job.reportIssuedAt) && <Button title="Open the service report for this job" to={`/admin/jobs/${job.id}/report`} variant={job.reportIssuedAt ? 'primary' : 'secondary'} icon={FileText}>{job.reportIssuedAt ? `Report ${job.reportNumber}` : 'Report (draft)'}</Button>}
+        {!job.reportIssuedAt && ['COMPLETED', 'UNABLE_TO_ACCESS', 'CANCELLED', 'CLOSED'].includes(job.status) && <Button title="Give the report a number, lock the charges and invoice the extras (7-day terms)" icon={Receipt} onClick={() => act(job, 'report', {}, 'Report issued and extras invoiced.')}>Issue report</Button>}
       </>}>
+      <TriagePanel job={job} act={act} config={config} />
       <div className="grid gap-4 xl:grid-cols-[1fr_360px]">
         <div className="order-2 min-w-0 space-y-4 xl:order-1">
           <div className="grid gap-4 md:grid-cols-2">
@@ -176,18 +194,33 @@ export function AdminJobPage() {
           </div>
           <Card title="Incident" icon={ShieldAlert}>
             <div className="mb-3 flex flex-wrap gap-2">
-              <Badge>{job.affectedArea ? `${job.affectedArea} m²` : 'Area not given'}</Badge>
+              <TriageBadge triage={job.triage} />
+              <Badge>{job.affectedArea ? `${job.affectedArea} m² reported` : 'Area not given'}</Badge>
+              {job.measuredArea != null && <Badge tone="brand">{job.measuredArea} m² measured</Badge>}
+              {job.waterType && <Badge tone={['GREY', 'BLACK'].includes(job.waterType) ? 'danger' : 'slate'}>{WATER_TYPES.find(w => w.id === job.waterType)?.label}</Badge>}
+              {(job.hazards || []).map(h => <Badge key={h} tone="danger">{HAZARDS.find(x => x.id === h)?.label || h}</Badge>)}
               <Badge tone={job.isOngoing ? 'warning' : 'slate'}>{job.isOngoing ? 'Still ongoing' : 'Contained'}</Badge>
               <Badge tone={job.isSafeToAccess === false ? 'danger' : 'success'}>{job.isSafeToAccess === false ? 'Hazards reported' : 'Safe to access'}</Badge>
               <Badge>Incident time: {formatDateTime(job.incidentTime)}</Badge>
             </div>
             <p className="rounded-xl bg-slate-50 p-3 text-sm text-slate-700">{job.description}</p>
+            {(job.coverageWarnings || []).length > 0 && (
+              <ul className="mt-3 list-disc space-y-1 rounded-xl border border-amber-200 bg-amber-50 py-2 pl-8 pr-3 text-sm text-amber-900">{job.coverageWarnings.map(w => <li key={w}>{w}</li>)}</ul>
+            )}
+            {job.reclassifyReason && <p className="mt-3 rounded-xl bg-amber-50 p-3 text-sm text-amber-900"><b>Reclassified on site:</b> {job.reclassifyReason}</p>}
           </Card>
+          <EligibilityCard job={job} org={org} config={config} />
+          <ChargesCard job={job} act={act} config={config} />
           <Card title="Photos & videos" icon={Camera}><MediaStrip job={job} /></Card>
           <Card title="Progress" icon={Clock}><SlaTimeline job={job} /></Card>
         </div>
 
         <div className="order-1 space-y-4 xl:order-2">
+          {!readyToDispatch && !isFinished(job.status) && !current && (
+            <Card tone="warning" title="Triage before dispatch" icon={AlertTriangle}>
+              <p className="text-sm text-amber-900">Acknowledge the request and mark it covered (A) before sending a technician. Assigning now marks it covered automatically.</p>
+            </Card>
+          )}
           {current && !picking ? (
             <Card title="Assigned technician" icon={Users} className={cx(justAssigned && 'ring-2 ring-emerald-400')}>
               {justAssigned && (
@@ -297,5 +330,116 @@ export function LiveMapPage() {
         </div>
       </div>
     </Page>
+  );
+}
+
+// Triage (Operations SOP): A covered, B specialist (quote), C excluded, D grey area (manager decides within 15 minutes)
+function TriagePanel({ job, act, config }) {
+  const [notes, setNotes] = useState('');
+  const [quote, setQuote] = useState(job.quoteAmount ? String(job.quoteAmount) : '');
+  if (isFinished(job.status) && job.status !== 'DECLINED') return null;
+  const greyDeadline = job.triage === 'GREY_AREA' && job.triagedAt ? new Date(new Date(job.triagedAt).getTime() + (config.greyAreaDecisionMinutes ?? 15) * 60000) : null;
+  const send = (outcome) => act(job, 'triage', { outcome, notes, quoteAmount: outcome === 'SPECIALIST' ? quote : undefined }, `Triage: ${TRIAGE[outcome].label}`);
+  return (
+    <Card title="Triage" icon={ListChecks} className="mb-4"
+      actions={<span className="flex flex-wrap items-center gap-2 text-xs text-slate-500"><TriageBadge triage={job.triage} />{job.acknowledgedAt ? `Acknowledged ${formatDateTime(job.acknowledgedAt)} · target ${targetText(job)}` : 'Not acknowledged yet'}</span>}>
+      {greyDeadline && <p className="mb-2 text-sm font-semibold text-indigo-700">Grey area: manager to decide by {greyDeadline.toLocaleTimeString('en-AU', { timeZone: 'Australia/Adelaide', hour: 'numeric', minute: '2-digit' })}.</p>}
+      {job.quoteStatus && <p className="mb-2 text-sm text-slate-700">Quote {fmtMoney(job.quoteAmount || 0)} + GST: <b>{job.quoteStatus.toLowerCase()}</b></p>}
+      <div className="grid gap-2 md:grid-cols-[1fr_160px]">
+        <input className={inputCls} value={notes} onChange={e => setNotes(e.target.value)} placeholder="Notes for the record (what was checked, who decided)" />
+        <input className={inputCls} value={quote} onChange={e => setQuote(e.target.value.replace(/[^\d.]/g, ''))} placeholder="Quote $ (for B)" inputMode="decimal" />
+      </div>
+      <div className="mt-3 grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+        {Object.entries(TRIAGE).map(([key, t]) => (
+          <button key={key} type="button" title={t.hint} onClick={() => send(key)}
+            className={cx('rounded-xl border-2 p-2.5 text-left text-sm cursor-pointer', job.triage === key ? 'border-brand bg-sky-50' : 'border-slate-200 hover:border-slate-300')}>
+            <div className="font-bold text-slate-900">{t.label}</div><div className="text-xs text-slate-500">{t.hint}</div>
+          </button>
+        ))}
+      </div>
+    </Card>
+  );
+}
+
+// Eligibility checks before dispatch (Operations SOP)
+function EligibilityCard({ job, org, config }) {
+  if (!org) return null;
+  const m = org.membership || {};
+  const site = (m.sites || []).find(x => x.id === job.locationId);
+  const plan = (config.membershipPlans || []).find(p => p.id === job.planAtBooking) || (config.membershipPlans || []).find(p => p.id === org.membershipPlan);
+  const at = new Date(job.acknowledgedAt || job.submittedAt);
+  const sur = plan ? surchargeFor(plan, at, config) : { amount: 0 };
+  const rows = [
+    ['Membership active and paid', org.subscriptionStatus === 'ACTIVE', org.subscriptionStatus === 'SUSPENDED' ? 'Suspended: payment overdue (charge as additional call-out)' : org.subscriptionStatus],
+    ['Past the 10-day waiting period', !inWaitingPeriod(org.activationDate, job.submittedAt, config), `Day ${m.membershipDay ?? '?'} of membership${inWaitingPeriod(org.activationDate, job.submittedAt, config) ? `: ${fmtMoney(config.earlyActivationFee)} early activation fee` : ''}`],
+    ['Included call-outs left at this site', !site || site.remaining > 0 || job.calloutType === 'INCLUDED', site ? `${site.remaining} of ${site.included} left${site.remaining <= 0 ? `: extra call-out ${fmtMoney(m.additionalCalloutFee)}` : ''}` : ''],
+    ['Inside the service window', !plan || insideServiceWindow(plan, at), plan ? `${plan.name}: ${plan.window ? '6am–9pm' : '24/7'}` : ''],
+    ['Surcharge quoted to the member', sur.amount === 0, sur.amount ? `${sur.reason}: ${fmtMoney(sur.amount)} + GST` : 'None'],
+    ['Site in the Adelaide metro area', !site || site.serviceArea === 'METRO', site?.serviceArea === 'METRO' ? 'Metro' : `Outside metro${site?.areaApproved ? ' (approved)' : ' (NOT approved yet)'}${site?.travelKm ? `, ${site.travelKm} km` : ', distance not set'}`],
+    ['Photos received', (job.photos || []).length > 0, (job.photos || []).length ? `${job.photos.length} photo(s)` : `Chase after ${config.photoChaseMinutes ?? 10} minutes`]
+  ];
+  return (
+    <Card title="Eligibility checks" icon={ClipboardCheck}>
+      <ul className="space-y-1.5 text-sm">
+        {rows.map(([label, ok, note]) => (
+          <li key={label} className="flex items-start gap-2">
+            {ok ? <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-emerald-600" /> : <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-amber-600" />}
+            <span><span className="font-semibold text-slate-800">{label}</span>{note ? <span className="text-slate-500"> · {note}</span> : null}</span>
+          </li>
+        ))}
+      </ul>
+    </Card>
+  );
+}
+
+// Charges so far, plus the admin-only extras (travel distance and other charges), and the goodwill credit
+function ChargesCard({ job, act, config }) {
+  const [travel, setTravel] = useState(job.travelKm != null ? String(job.travelKm) : '');
+  const [other, setOther] = useState(job.otherCharges ? String(job.otherCharges) : '');
+  const [otherNote, setOtherNote] = useState(job.otherChargesNote || '');
+  const late = Boolean(job.targetAttendanceAt && job.arrivedAt && new Date(job.arrivedAt) > new Date(job.targetAttendanceAt));
+  return (
+    <Card title="Charges (ex GST)" icon={Receipt}
+      actions={job.targetAttendanceAt && !job.goodwillCredited && late && <Button size="sm" variant="ghost" icon={Gift} title={`Credit ${config.goodwillPoints} points if SACC arrived more than 4 hours late for reasons within its control`} onClick={() => act(job, 'goodwill', {}, 'Goodwill points credited.')}>Late: credit {config.goodwillPoints} pts</Button>}>
+      <ChargesTable charges={job.charges} />
+      {!job.reportIssuedAt && (
+        <div className="mt-3 grid gap-2 border-t border-slate-100 pt-3 md:grid-cols-[120px_120px_1fr_auto]">
+          <input className={inputCls} value={travel} onChange={e => setTravel(e.target.value.replace(/[^\d.]/g, ''))} placeholder="Travel km" title="Kilometres one way from the Adelaide GPO (outside metro only)" inputMode="decimal" />
+          <input className={inputCls} value={other} onChange={e => setOther(e.target.value.replace(/[^\d.]/g, ''))} placeholder="Other $" inputMode="decimal" />
+          <input className={inputCls} value={otherNote} onChange={e => setOtherNote(e.target.value)} placeholder="What the other charge is for" />
+          <Button variant="secondary" onClick={() => act(job, 'site', { travelKm: travel, otherCharges: other || 0, otherChargesNote: otherNote }, 'Charges updated.')}>Save</Button>
+        </div>
+      )}
+      {job.reportIssuedAt && <p className="mt-2 text-xs text-slate-500">Locked when report {job.reportNumber} was issued on {fmtDate(job.reportIssuedAt)}.</p>}
+    </Card>
+  );
+}
+
+// Things the SOP and Agreement give SACC a deadline for, from GET /analytics/summary
+function AttentionStrip({ jobs }) {
+  const [a, setA] = useState(null);
+  useEffect(() => {
+    let alive = true;
+    fetch(`${API_BASE}/analytics/summary`).then(r => (r.ok ? r.json() : null)).then(d => { if (alive) setA(d?.attention || null); }).catch(() => {});
+    return () => { alive = false; };
+  }, [jobs]);
+  if (!a) return null;
+  const items = [
+    ...a.greyArea.map(j => ({ key: `g${j.id}`, tone: 'danger', text: `${j.jobNumber}: grey-area decision overdue`, to: `/admin/jobs/${j.id}` })),
+    ...a.reportsDue.map(j => ({ key: `r${j.id}`, tone: 'warning', text: `${j.jobNumber}: service report due (24 h)`, to: `/admin/jobs/${j.id}` })),
+    ...a.goodwillDue.map(j => ({ key: `w${j.id}`, tone: 'warning', text: `${j.jobNumber}: arrived late, check the 50-point credit`, to: `/admin/jobs/${j.id}` })),
+    ...a.awaitingQuote.map(j => ({ key: `q${j.id}`, tone: 'slate', text: `${j.jobNumber}: waiting for the member to accept the quote`, to: `/admin/jobs/${j.id}` })),
+    ...a.outsideMetroSites.map(l => ({ key: `l${l.id}`, tone: 'indigo', text: `${l.name}: outside metro, approve the site`, to: `/admin/customers/${l.organizationId}?tab=sites` })),
+    ...a.suspended.map(o => ({ key: `s${o.id}`, tone: 'danger', text: `${o.businessName}: suspended (payment overdue)`, to: `/admin/customers/${o.id}` })),
+    ...a.cancellationReview.map(o => ({ key: `c${o.id}`, tone: 'danger', text: `${o.businessName}: unpaid 30 days, review for cancellation`, to: `/admin/customers/${o.id}` })),
+    ...(a.overdueInvoices ? [{ key: 'inv', tone: 'warning', text: `${a.overdueInvoices} overdue invoice(s)`, to: '/admin/customers' }] : [])
+  ];
+  if (!items.length) return null;
+  return (
+    <div className="mt-3 flex shrink-0 flex-wrap items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2">
+      <span className="flex items-center gap-1 text-xs font-bold uppercase text-amber-800"><AlertTriangle className="h-3.5 w-3.5" />Needs attention</span>
+      {items.slice(0, 8).map(i => <Link key={i.key} to={i.to} className="hover:opacity-80"><Badge tone={i.tone}>{i.text}</Badge></Link>)}
+      {items.length > 8 && <span className="text-xs text-amber-800">+{items.length - 8} more</span>}
+    </div>
   );
 }

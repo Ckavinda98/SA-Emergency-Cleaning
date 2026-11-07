@@ -35,9 +35,29 @@ model Organization {
   paymentMethod      String              @default("PayTo Bank Direct")
   paymentType        String              @default("DIRECT_DEBIT")
   subscriptionStatus String              @default("ACTIVE")
-  consecutiveMonths  Int                 @default(8)
-  pointsBalance      Int                 @default(1592)
-  calloutsUsed       Int                 @default(1)
+  consecutiveMonths  Int                 @default(0) // no longer used: worked out from activationDate
+  pointsBalance      Int                 @default(0) // sum of PointsEntry, kept in step for quick reads
+  calloutsUsed       Int                 @default(0) // this month, all sites together (each site keeps its own)
+  // Agreement cl. 1, 3, 4, 5, 6, 14.7, 15, 19.2
+  membershipNumber   String?             @unique
+  activationDate     DateTime            @default(now())
+  billingFrequency   String              @default("MONTHLY") // MONTHLY, ANNUAL
+  paymentNoticeAt    DateTime?           // payment failed and the member was told; drives suspension (cl. 4.4)
+  cancellationReview Boolean             @default(false) // unpaid 30 days (cl. 5.4)
+  cancelledAt        DateTime?
+  refundAmount       Float?
+  pendingPlan        String?             // downgrade waiting for the next billing period (cl. 6.3)
+  pendingPlanFrom    DateTime?
+  lockedRatesJson    String?             // rates fixed for the membership period (cl. 15.2)
+  ratesLockedUntil   DateTime?
+  lastCalloutAt      DateTime?           // for the 30-day cancellation rule (cl. 5.2)
+  referralCode       String?             @unique
+  referredById       String?
+  referralRewarded   Boolean             @default(false)
+  bonusCallouts      Int                 @default(0) // Gold level: 1 per membership year (cl. 15)
+  bonusCalloutYear   Int                 @default(0)
+  outsideMetroApproved Boolean           @default(false)
+  pointsEntries      PointsEntry[]
   users              User[]
   locations          Location[]
   emergencyRequests  EmergencyRequest[]
@@ -57,6 +77,11 @@ model Location {
   contactPhone         String
   accessInstructions   String?
   securityNotes        String?
+  membershipPlan       String?             // each site holds its own plan; empty = the company plan (cl. 17.1)
+  calloutsUsed         Int                 @default(0) // this month, for this site only
+  serviceArea          String              @default("METRO") // METRO, OUTSIDE_METRO (cl. 18)
+  areaApproved         Boolean             @default(true) // outside-metro sites need SACC approval
+  travelKm             Float?              // one way from the Adelaide GPO, confirmed by SACC
   emergencyRequests    EmergencyRequest[]
   redemptionRequests   RedemptionRequest[]
   createdAt            DateTime            @default(now())
@@ -108,6 +133,61 @@ model EmergencyRequest {
   workStartedAt      DateTime?
   completedAt        DateTime?
   source             String   @default("PORTAL")
+  // Call capture (Operations SOP) and coverage (cl. 9, 10)
+  waterType          String?  // NONE, CLEAN, GREY, BLACK
+  hazardsJson        String   @default("[]")
+  coverageWarningsJson String @default("[]")
+  // Acknowledgment and response clock (cl. 13)
+  acknowledgedAt     DateTime?
+  responseClockStartAt DateTime?
+  targetWindowFrom   DateTime?
+  priorityTier       Int      @default(4) // 1 Premium, 2 Business, 3 Essential, 4 non-member
+  planAtBooking      String?
+  // Triage (SOP): COVERED, SPECIALIST, EXCLUDED, GREY_AREA
+  triage             String?
+  triageNotes        String?
+  triagedAt          DateTime?
+  // Call-out and charges (cl. 3, 7, 8)
+  calloutType        String?  // INCLUDED, ADDITIONAL, NONE (not used: quote, decline, cancelled before dispatch)
+  usedBonusCallout   Boolean  @default(false)
+  earlyActivation    Boolean  @default(false)
+  surchargeAmount    Float    @default(0)
+  surchargeReason    String?
+  technicianCount    Int      @default(1)
+  disposalJson       String   @default("[]") // [{ item, cost }]
+  travelKm           Float?
+  otherCharges       Float    @default(0)
+  otherChargesNote   String?
+  // On site (SOP, cl. 10.2, 12.4)
+  measuredArea       Float?
+  quoteAmount        Float?
+  quoteStatus        String?  // PENDING, ACCEPTED, DECLINED
+  reclassifyReason   String?
+  missedAccessAt     DateTime?
+  missedAccessJson   String?  // { waitedMinutes, calls, entrancePhoto }
+  cancelledAt        DateTime?
+  cancellationFee    Float    @default(0)
+  // Service report (Service Report Template)
+  beforePhotosJson   String   @default("[]")
+  afterPhotosJson    String   @default("[]")
+  causeOfIncident    String?
+  surfacesAffected   String?
+  methodUsed         String?
+  equipmentUsed      String?
+  productsUsed       String?
+  equipmentLeft      String?
+  equipmentCollectionAt DateTime?
+  recommendations    String?
+  checklistJson      String   @default("{}")
+  siteRepName        String?
+  siteRepSignature   String?  // signature image (data URL)
+  signedOffAt        DateTime?
+  reportNumber       String?  @unique
+  reportIssuedAt     DateTime?
+  chargesJson        String?  // frozen charges when the report is issued
+  extrasInvoiceId    String?
+  goodwillCredited   Boolean  @default(false)
+  reattendOfId       String?  // workmanship guarantee re-attend (cl. 20)
   statusEvents       JobStatusEvent[]
   createdAt          DateTime @default(now())
 }
@@ -121,8 +201,13 @@ model RedemptionRequest {
   serviceCode      String
   serviceName      String
   quantity         Float
-  calculatedPoints Int
-  status           String       @default("PENDING_APPROVAL") // PENDING_APPROVAL, APPROVED, REJECTED, SCHEDULED
+  calculatedPoints Int          @default(0) // points applied (1 point = $1, cl. 14.2)
+  notes            String?
+  quoteAmount      Float?       // SACC's price for the service, ex GST
+  discountPercent  Float        @default(0) // Silver/Gold loyalty discount (cl. 15)
+  balanceDue       Float?       // price after points, invoiced to the member
+  scheduledFor     DateTime?
+  status           String       @default("PENDING_APPROVAL") // PENDING_APPROVAL (awaiting quote), APPROVED (booked, points deducted), REJECTED, CANCELLED (points restored)
   createdAt        DateTime     @default(now())
 }
 
@@ -140,6 +225,10 @@ model Invoice {
   description    String
   amount         Float
   status         String       @default("PAID") // PAID, PENDING, OVERDUE
+  kind           String       @default("MEMBERSHIP") // MEMBERSHIP, EXTRAS, REDEMPTION, REFUND
+  gst            Float        @default(0)
+  jobId          String?
+  linesJson      String?
   paymentMethod  String       @default("PayTo Bank Direct")
   dueDate        DateTime     @default(now())
   paidAt         DateTime?    @default(now())
@@ -192,4 +281,19 @@ model LoginLog {
 
   @@index([email])
   @@index([createdAt])
+}
+
+// Reward points ledger (cl. 14): every point earned or spent, so points can expire 12 months after they were earned
+model PointsEntry {
+  id             String       @id @default(uuid())
+  organizationId String
+  organization   Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  points         Int          // + earned, - spent / expired / cancelled
+  remaining      Int          @default(0) // for earned entries: points not yet spent or expired
+  reason         String       // OPENING, FEES, UNUSED_CALLOUT, REFERRAL, GOODWILL, REDEMPTION, REDEMPTION_RESTORED, EXPIRED, CANCELLED, ADJUSTMENT
+  note           String?
+  expiresAt      DateTime?
+  createdAt      DateTime     @default(now())
+
+  @@index([organizationId, createdAt])
 }

@@ -7,7 +7,7 @@ import { API_BASE } from '@/shared/config/env.js';
 const AppDataContext = createContext(null);
 
 // Empty until /api/config answers. Every value shown in the app comes from the database.
-const EMPTY_CONFIG = { membershipPlans: [], redemptionRates: [], incidentCategories: [], additionalCalloutFee: 0, overageHourlyRate: 0, tenureMinMonths: 0, toiletOverflowDisclaimer: '' };
+const EMPTY_CONFIG = { membershipPlans: [], redemptionServices: [], incidentCategories: [], additionalCalloutFee: 0, tenureMinMonths: 0, toiletOverflowDisclaimer: '', publicHolidays: [], loyaltyLevels: [], multiSiteDiscounts: [] };
 
 // Jobs store the technician's name; older rows add a suffix ("Dave Miller (Tech ID #104)")
 export const isTechniciansJob = (job, tech) => {
@@ -147,18 +147,22 @@ export function AppDataProvider({ children }) {
 
 export const useAppData = () => useContext(AppDataContext);
 
-// Customer-side numbers used on several pages
+// Customer-side numbers used on several pages. The server works them out from the Agreement rules
+// (customer.membership), so every page shows the same figures.
 export function useCustomerSummary() {
   const { activeCustomer: account, activePlan, config, jobs } = useAppData();
-  const included = activePlan?.callouts || 2;
-  const used = account?.calloutsUsed || 0;
-  const remaining = Math.max(0, included - used);
+  const m = account?.membership || {};
+  const included = m.included ?? activePlan?.callouts ?? 0;
+  const used = m.used ?? account?.calloutsUsed ?? 0;
+  const remaining = m.remaining ?? Math.max(0, included - used);
   const customerJobs = jobs.filter(j => j.organizationId === account?.id || j.customerName === account?.businessName);
   return {
-    account, activePlan, config, customerJobs,
+    account, activePlan, config, customerJobs, membership: m,
     included, used, remaining,
     exhausted: remaining <= 0,
-    tenureUnlocked: (account?.consecutiveMonths || 0) >= (config.tenureMinMonths || 6),
-    cancelled: account?.subscriptionStatus === 'CANCELLED'
+    labourRate: m.labourRate ?? activePlan?.labourRate,
+    tenureUnlocked: Boolean(m.redeemUnlocked),
+    cancelled: account?.subscriptionStatus === 'CANCELLED',
+    suspended: account?.subscriptionStatus === 'SUSPENDED'
   };
 }

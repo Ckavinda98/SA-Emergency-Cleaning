@@ -26,7 +26,7 @@ export function JobList({ jobs, linkTo, showCustomer = false, emptyTitle = 'No r
           {jobs.map(job => (
             <tr key={job.id} title="Open this request" onClick={() => navigate(linkTo(job))} className="cursor-pointer hover:bg-slate-50">
               <td className="py-3 pr-3 align-top font-mono text-xs font-bold text-brand whitespace-nowrap">{job.jobNumber || job.id.slice(0, 8)}</td>
-              {showCustomer && <td className="py-3 pr-3 align-top font-semibold text-slate-900">{job.customerName}</td>}
+              {showCustomer && <td className="py-3 pr-3 align-top font-semibold text-slate-900">{job.customerName}{job.planName && <div className="text-[11px] font-medium text-slate-500">{job.planName}{job.priorityTier < 4 ? ` · priority ${job.priorityTier}` : ' · no member priority'}</div>}</td>}
               <td className="py-3 pr-3 align-top">
                 <div className="font-semibold text-slate-900">{job.category}</div>
                 <div className="line-clamp-1 text-xs text-slate-500">{job.locationName}{job.address ? ` · ${job.address}` : ''}</div>

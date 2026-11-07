@@ -10,7 +10,7 @@ import { ROLE_HOME_PATH, canOpenPath, LEGACY_HASH_PATHS } from '@shared/roles.js
 import { LoginPage, RegisterPage } from '@/features/auth';
 import {
   CustomerDashboard, RequestsPage, RequestDetailPage, RequestFormPage, RewardsPage,
-  MembershipPage, ChangePlanPage, CancelMembershipPage, AccountPage, ServiceReportPage
+  MembershipPage, ChangePlanPage, CancelMembershipPage, MembershipCardPage, AccountPage, ServiceReportPage
 } from '@/features/customer';
 import { TechJobsPage, TechJobDetailPage, TechHistoryPage, TechProfilePage } from '@/features/technician';
 import {
@@ -44,6 +44,7 @@ export default function App() {
                 <Route path="membership" element={<MembershipPage />} />
                 <Route path="membership/change" element={<ChangePlanPage />} />
                 <Route path="membership/cancel" element={<CancelMembershipPage />} />
+                <Route path="membership/card" element={<MembershipCardPage />} />
                 <Route path="account" element={<Navigate to="/app/account/profile" replace />} />
                 <Route path="account/:section" element={<AccountPage />} />
               </Route>

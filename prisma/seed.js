@@ -1,5 +1,10 @@
 import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
+import { DEFAULT_CONFIG } from '../shared/config.js';
+
+const monthsAgo = (n) => { const d = new Date(); d.setMonth(d.getMonth() - n); return d; };
+const lockedRates = () => JSON.stringify(Object.fromEntries(DEFAULT_CONFIG.membershipPlans.map(p => [p.id, { labourRate: p.labourRate, additionalCalloutFee: DEFAULT_CONFIG.additionalCalloutFee, price: p.price }])));
+const nextYearFrom = (start) => { const d = new Date(start); while (d <= new Date()) d.setFullYear(d.getFullYear() + 1); return d; };
 
 // SACC_DB_URL lets the automated tests seed their own database (prisma/test.db)
 const prisma = process.env.SACC_DB_URL
@@ -11,35 +16,8 @@ async function main() {
   const hashedPassword = await bcrypt.hash('Password123!', 10);
 
   // 1. Seed Dynamic System Config
-  const defaultConfig = {
-    membershipPlans: [
-      { id: 'essential', name: 'Essential', price: 99, callouts: 1, hoursPerCallout: 1 },
-      { id: 'business', name: 'Business', price: 199, callouts: 2, hoursPerCallout: 1 },
-      { id: 'premium', name: 'Premium', price: 399, callouts: 4, hoursPerCallout: 1 }
-    ],
-    additionalCalloutFee: 30,
-    overageHourlyRate: 120,
-    toiletOverflowDisclaimer: "Cleaning of the affected area and surrounding surfaces only. SA Commercial Cleaning Services Pty Ltd does not provide plumbing, blockage removal, drain clearing or toilet unclogging services.",
-    tenureMinMonths: 6,
-    redemptionRates: [
-      { code: 'carpet_steam', name: 'Carpet Steam Cleaning', unit: 'm²', points: 5 },
-      { code: 'carpet_encap', name: 'Carpet Encapsulation', unit: 'm²', points: 3 },
-      { code: 'floor_scrubbing', name: 'Machine Floor Scrubbing', unit: 'm²', points: 4 },
-      { code: 'pressure_clean', name: 'Pressure Cleaning', unit: 'm²', points: 4 },
-      { code: 'tile_grout', name: 'Tile & Grout Cleaning', unit: 'm²', points: 7 },
-      { code: 'win_internal', name: 'Internal Windows', unit: 'panel', points: 8 },
-      { code: 'win_external', name: 'External Windows', unit: 'panel', points: 10 },
-      { code: 'win_high', name: 'High-Level Windows', unit: 'panel', points: 18 },
-      { code: 'deep_clean', name: 'Deep Cleaning', unit: 'hour', points: 100 },
-      { code: 'high_dusting', name: 'High Dusting', unit: 'hour', points: 100 }
-    ],
-    incidentCategories: [
-      'Spill', 'Vomit', 'Urine or faeces', 'Carpet stain', 'Water leak', 
-      'Wet carpet', 'Toilet overflow', 'Broken glass', 'Oil or grease spill', 
-      'Bin leakage', 'Emergency bathroom cleaning', 'Emergency kitchen cleaning', 
-      'Minor graffiti', 'Other'
-    ]
-  };
+  // Plans, fees and rules from the client's Membership Agreement v1.0 (shared/config.js)
+  const defaultConfig = DEFAULT_CONFIG;
 
   await prisma.systemDynamicConfig.upsert({
     where: { configKey: 'MAIN_CONFIG' },
@@ -62,9 +40,15 @@ async function main() {
       paymentMethod: 'PayTo Bank Direct',
       paymentType: 'DIRECT_DEBIT',
       subscriptionStatus: 'ACTIVE',
-      consecutiveMonths: 8,
-      pointsBalance: 1592,
-      calloutsUsed: 0,
+      consecutiveMonths: 0,
+      pointsBalance: 0,
+      calloutsUsed: 1,
+      lastCalloutAt: new Date(Date.now() - 40 * 60000),
+      activationDate: monthsAgo(8),
+      membershipNumber: 'SACC-M01001',
+      referralCode: 'REF-MAHIMA',
+      lockedRatesJson: lockedRates(),
+      ratesLockedUntil: nextYearFrom(monthsAgo(8)),
       locations: {
         create: [
           {
@@ -74,7 +58,8 @@ async function main() {
             contactName: 'Sarah Jenkins',
             contactPhone: '0433 111 222',
             accessInstructions: 'Keypad Code #4829 on Rear Service Door after 6 PM',
-            securityNotes: 'Security Guard on site 24/7. Check in at reception desk.'
+            securityNotes: 'Security Guard on site 24/7. Check in at reception desk.',
+            calloutsUsed: 1
           },
           {
             id: 'loc-2',
@@ -116,9 +101,14 @@ async function main() {
       paymentMethod: 'PayTo Bank Direct',
       paymentType: 'DIRECT_DEBIT',
       subscriptionStatus: 'ACTIVE',
-      consecutiveMonths: 12,
-      pointsBalance: 3192,
+      consecutiveMonths: 0,
+      pointsBalance: 0,
       calloutsUsed: 1,
+      activationDate: monthsAgo(13),
+      membershipNumber: 'SACC-M01002',
+      referralCode: 'REF-ADLTWR',
+      lockedRatesJson: lockedRates(),
+      ratesLockedUntil: nextYearFrom(monthsAgo(13)),
       locations: {
         create: [
           {
@@ -128,6 +118,7 @@ async function main() {
             contactName: 'David Ross',
             contactPhone: '0418 987 654',
             accessInstructions: 'Security Desk Master Key Card #04',
+            calloutsUsed: 1,
             securityNotes: 'After hours swipe card required at lift lobby.'
           }
         ]
@@ -146,6 +137,15 @@ async function main() {
       organizationId: 'cust-2'
     }
   });
+
+  // Opening reward points balances (ledger, cl. 14), earned last month so they expire in 11 months
+  for (const [orgId, points] of [['cust-1', 1592], ['cust-2', 3192]]) {
+    const has = await prisma.pointsEntry.findFirst({ where: { organizationId: orgId } });
+    if (!has) {
+      await prisma.pointsEntry.create({ data: { organizationId: orgId, points, remaining: points, reason: 'OPENING', note: 'Opening balance', createdAt: monthsAgo(1), expiresAt: monthsAgo(-11) } });
+      await prisma.organization.update({ where: { id: orgId }, data: { pointsBalance: points } });
+    }
+  }
 
   // 3. Seed Technicians
   await prisma.technician.upsert({
@@ -217,15 +217,27 @@ async function main() {
       customerName: 'Mahima Commercial Enterprises Pty Ltd',
       locationName: 'Adelaide CBD Headquarters',
       address: '120 Grenfell Street, Adelaide SA 5000',
-      category: 'Toilet Overflow',
+      category: 'Toilet overflow',
       description: 'Executive rest room toilet overflowed onto hallway carpet tiles.',
-      affectedArea: 25,
+      affectedArea: 6,
+      waterType: 'BLACK',
+      planAtBooking: 'business',
+      priorityTier: 2,
+      acknowledgedAt: new Date(Date.now() - 42 * 60000),
+      responseClockStartAt: new Date(Date.now() - 42 * 60000),
+      targetWindowFrom: new Date(Date.now() + 78 * 60000),
+      triage: 'COVERED',
+      triagedAt: new Date(Date.now() - 40 * 60000),
+      calloutType: 'INCLUDED',
+      measuredArea: 6,
+      beforePhotosJson: JSON.stringify(['https://images.unsplash.com/photo-1584622650111-993a426fbf0a?auto=format&fit=crop&w=600&q=80']),
+      workStartedAt: new Date(Date.now() - 20 * 60000),
       onsiteContact: 'Sarah Jenkins',
       onsitePhone: '0433 111 222',
       accessInstructions: 'Keypad Code #4829 on Rear Service Door',
       status: 'IN_PROGRESS',
       submittedAt: new Date(Date.now() - 45 * 60000),
-      targetAttendanceAt: new Date(Date.now() + 75 * 60000),
+      targetAttendanceAt: new Date(Date.now() + 198 * 60000),
       technicianName: 'Dave Miller (Tech ID #104)',
       photosJson: JSON.stringify([
         'https://images.unsplash.com/photo-1584622650111-993a426fbf0a?auto=format&fit=crop&w=600&q=80',
@@ -247,9 +259,22 @@ async function main() {
       customerName: 'Mahima Commercial Enterprises Pty Ltd',
       locationName: 'Port Adelaide Distribution Hub',
       address: '45 Ocean Steamers Road, Port Adelaide SA 5015',
-      category: 'Water Ingress & Extraction',
-      description: 'Roof leak during heavy storm causing standing water in loading bay B.',
-      affectedArea: 60,
+      category: 'Burst pipe or water leak',
+      description: 'Burst pipe in loading bay B: standing clean water near the roller door.',
+      affectedArea: 8,
+      waterType: 'CLEAN',
+      planAtBooking: 'business',
+      priorityTier: 2,
+      acknowledgedAt: new Date(Date.now() - 7 * 24 * 3600 * 1000 + 5 * 60000),
+      responseClockStartAt: new Date(Date.now() - 7 * 24 * 3600 * 1000 + 5 * 60000),
+      targetAttendanceAt: new Date(Date.now() - 7 * 24 * 3600 * 1000 + 245 * 60000),
+      triage: 'COVERED',
+      calloutType: 'INCLUDED',
+      completedAt: new Date(Date.now() - 7 * 24 * 3600 * 1000 + 4 * 3600 * 1000),
+      workStartedAt: new Date(Date.now() - 7 * 24 * 3600 * 1000 + 150 * 60000),
+      measuredArea: 8,
+      siteRepName: 'Mark Vance',
+      signedOffAt: new Date(Date.now() - 7 * 24 * 3600 * 1000 + 4 * 3600 * 1000),
       onsiteContact: 'Mark Vance',
       onsitePhone: '0422 999 888',
       accessInstructions: 'Gate 3 Lockbox 1928',
@@ -259,7 +284,7 @@ async function main() {
       photosJson: JSON.stringify([
         'https://images.unsplash.com/photo-1527515637462-cff94eecc1ac?auto=format&fit=crop&w=600&q=80'
       ]),
-      timerMinutes: 0,
+      timerMinutes: 90,
       timerActive: false
     }
   });
@@ -272,8 +297,10 @@ async function main() {
       id: 'inv-1',
       invoiceNumber: 'INV-2026-0801',
       organizationId: 'cust-1',
-      description: 'Monthly Business Membership Subscription ($199/mo)',
+      description: 'Business membership, monthly fee',
+      kind: 'MEMBERSHIP',
       amount: 199.00,
+      gst: 19.90,
       status: 'PAID',
       paymentMethod: 'PayTo Bank Direct',
       dueDate: new Date(Date.now() - 10 * 86400000),
@@ -288,8 +315,10 @@ async function main() {
       id: 'inv-2',
       invoiceNumber: 'INV-2026-0802',
       organizationId: 'cust-2',
-      description: 'Monthly Premium Membership Subscription ($399/mo)',
+      description: 'Premium membership, monthly fee',
+      kind: 'MEMBERSHIP',
       amount: 399.00,
+      gst: 39.90,
       status: 'PAID',
       paymentMethod: 'PayTo Bank Direct',
       dueDate: new Date(Date.now() - 5 * 86400000),
@@ -306,9 +335,10 @@ async function main() {
       organizationId: 'cust-1',
       locationId: 'loc-1',
       serviceCode: 'carpet_steam',
-      serviceName: 'Carpet Steam Cleaning',
+      serviceName: 'Carpet steam cleaning',
       quantity: 50,
-      calculatedPoints: 250,
+      notes: 'Boardroom and reception, about 50 m²',
+      calculatedPoints: 0,
       status: 'PENDING_APPROVAL'
     }
   });

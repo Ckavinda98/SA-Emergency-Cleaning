@@ -59,8 +59,8 @@ const FIELDS = {
   phone: 'Phone', rating: 'Rating', activeJobId: 'Active job', serviceCode: 'Service', quantity: 'Quantity',
   calculatedPoints: 'Points', points: 'Points', deleted: 'Records deleted', extensionRequested: 'Extra time requested',
   extensionApproved: 'Extra time approved', additionalCharges: 'Extra charges', additionalCalloutFee: 'Extra call-out fee',
-  overageHourlyRate: 'Extra labour rate', tenureMinMonths: 'Months before points unlock', toiletOverflowDisclaimer: 'Toilet overflow notice',
-  incidentCategories: 'Incident types', membershipPlans: 'Plans', redemptionRates: 'Reward rates', price: 'Price',
+  labourRate: 'Labour rate', surchargeAmount: 'Surcharge', missedAccessFee: 'Missed access fee', lateCancellationFee: 'Late cancellation fee', tenureMinMonths: 'Months before points unlock', toiletOverflowDisclaimer: 'Toilet overflow notice',
+  incidentCategories: 'Incident types', membershipPlans: 'Plans', redemptionServices: 'Reward services', publicHolidays: 'Public holidays', metroPostcodes: 'Metro postcodes', measuredArea: 'Measured area (m²)', triage: 'Triage', reportNumber: 'Report number', billingFrequency: 'Billing', membershipPlan: 'Plan', areaApproved: 'Outside metro approved', travelKm: 'Travel (km)', price: 'Price',
   callouts: 'Call-outs', hoursPerCallout: 'Hours per call-out', amount: 'Amount', loginEmail: 'Login email', customer: 'Customer', customerName: 'Customer', sites: 'Sites', pointsBalance: 'Points balance'
 };
 

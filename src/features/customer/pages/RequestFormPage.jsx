@@ -9,6 +9,8 @@ import { Page, Card, Button, Field, Alert, StickyActions, EmptyState, inputCls, 
 import { PhoneInput } from '@/shared/ui/inputs.jsx';
 import { phoneError, personNameError, numberError } from '@shared/validation.js';
 import { jobPhotos, jobVideos, isNewJob } from '@/shared/ui/jobs.jsx';
+import { HotlineLink, fmtMoney } from '@/shared/ui/membership.jsx';
+import { coverageWarnings, WATER_TYPES, HAZARDS, isAfterHours, surchargeFor } from '@shared/membership.js';
 
 export function RequestFormPage() {
   const { jobId } = useParams();
@@ -19,9 +21,9 @@ export function RequestFormPage() {
   if (jobId && !editing) {
     return <Page breadcrumb={[{ label: 'Requests', to: '/app/requests' }, { label: 'Edit' }]}><Card><EmptyState title="Request not found" /></Card></Page>;
   }
-  if (editing && !isNewJob(editing.status)) {
+  if (editing && (!isNewJob(editing.status) || editing.acknowledgedAt)) {
     return <Page breadcrumb={[{ label: 'Requests', to: '/app/requests' }, { label: editing.jobNumber, to: `/app/requests/${editing.id}` }, { label: 'Edit' }]}>
-      <Card><EmptyState title="This request can no longer be edited" action={<Button to={`/app/requests/${editing.id}`} variant="secondary">Back to the request</Button>}>A technician has already been dispatched. Call the response desk if something has changed.</EmptyState></Card>
+      <Card><EmptyState title="This request can no longer be edited" action={<Button to={`/app/requests/${editing.id}`} variant="secondary">Back to the request</Button>}>SACC has already acknowledged it. Call <HotlineLink /> if something has changed.</EmptyState></Card>
     </Page>;
   }
   return <RequestForm key={jobId || 'new'} job={editing} account={account} config={config} summary={s} upsertJob={upsertJob} upsertCustomer={upsertCustomer} />;
@@ -34,7 +36,10 @@ function RequestForm({ job, account, config, summary, upsertJob, upsertCustomer 
   const firstLoc = locations.find(l => l.id === job?.locationId) || locations[0] || {};
 
   const [locId, setLocId] = useState(job?.locationId || firstLoc.id || '');
-  const [category, setCategory] = useState(job?.category || 'Toilet overflow');
+  const [category, setCategory] = useState(job?.category || (config.incidentCategories || [])[0] || '');
+  const [waterType, setWaterType] = useState(job?.waterType || 'NONE');
+  const [hazards, setHazards] = useState(job?.hazards || []);
+  const [noPhotos, setNoPhotos] = useState(false);
   const [description, setDescription] = useState(job?.description || '');
   const [affectedArea, setAffectedArea] = useState(job?.affectedArea ? String(job.affectedArea) : '');
   const [incidentTime, setIncidentTime] = useState(() => {
@@ -53,7 +58,6 @@ function RequestForm({ job, account, config, summary, upsertJob, upsertCustomer 
   const [linkInput, setLinkInput] = useState('');
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
-  const [limitHit, setLimitHit] = useState(false);
   const { errors, check, clear, fromServer } = useFieldErrors();
   const edit = (setter, field) => (v) => { setter(v); clear(field); };
 
@@ -87,8 +91,17 @@ function RequestForm({ job, account, config, summary, upsertJob, upsertCustomer 
     incidentTime: v => (!v.incidentTime ? 'Enter when it happened.' : new Date(v.incidentTime) > new Date(Date.now() + 5 * 60000) ? 'The time cannot be in the future.' : ''),
     onsiteContact: v => personNameError(v.onsiteContact, { label: 'On-site contact name' }),
     onsitePhone: v => phoneError(v.onsitePhone),
-    accessInstructions: v => (String(v.accessInstructions || '').trim().length < 3 ? 'Tell the technician how to get in, e.g. keypad code or who meets them.' : '')
+    accessInstructions: v => (String(v.accessInstructions || '').trim().length < 3 ? 'Tell the technician how to get in, e.g. keypad code or who meets them.' : ''),
+    // Clear photos help SACC assess the request (cl. 12.1, 12.2)
+    photos: () => (!job && !photos.length && !linkInput.trim() && !noPhotos ? 'Add at least one photo, or tick that you cannot take one.' : '')
   }, { description, affectedArea, incidentTime, onsiteContact, onsitePhone, accessInstructions });
+
+  const warnings = coverageWarnings({ category, affectedArea, waterType, hazards }, config);
+  const sitePlan = (config.membershipPlans || []).find(p => p.id === (loc.membershipPlan || account.membershipPlan));
+  const now = new Date();
+  const surcharge = sitePlan ? surchargeFor(sitePlan, now, config) : { amount: 0 };
+  const essentialAfterHours = sitePlan?.window && isAfterHours(now);
+  const toggleHazard = (id) => setHazards(h => (h.includes(id) ? h.filter(x => x !== id) : [...h, id]));
 
   const submit = async (e) => {
     e.preventDefault();
@@ -97,7 +110,7 @@ function RequestForm({ job, account, config, summary, upsertJob, upsertCustomer 
     setSaving(true);
     const body = {
       locationId: loc.id, locationName: loc.name, address: loc.address,
-      category, description, affectedArea: parseFloat(affectedArea) || 0, incidentTime, isOngoing, isSafeToAccess: isSafe,
+      category, description, affectedArea: parseFloat(affectedArea) || 0, waterType, hazards, incidentTime, isOngoing, isSafeToAccess: isSafe,
       onsiteContact, onsitePhone, accessInstructions, accessRestrictions, parkingInstructions,
       photos: linkInput.trim() ? [...photos, linkInput.trim()] : photos, videos
     };
@@ -111,13 +124,11 @@ function RequestForm({ job, account, config, summary, upsertJob, upsertCustomer 
       if (!res.ok || data.error) {
         const msg = data.error || 'The request could not be saved.';
         if (!fromServer(data)) setError(msg);
-        if (msg.includes('Call-out Limit')) setLimitHit(true);
         setSaving(false);
         return;
       }
       upsertJob(data);
-      if (!job) upsertCustomer({ ...account, calloutsUsed: (account.calloutsUsed || 0) + 1 });
-      notify(job ? 'Your changes were saved.' : `Request ${data.jobNumber || ''} sent. We aim to be on site within 2–4 hours.`);
+      notify(job ? 'Your changes were saved.' : `Request ${data.jobNumber || ''} sent. We will acknowledge it shortly; the 2–4 hour target starts then.`);
       navigate(`/app/requests/${data.id}`, { replace: true });
     } catch {
       setError(job ? 'Cannot reach the server. Your changes were not saved.' : 'Cannot reach the server. The request was not sent. Please try again or call the hotline.');
@@ -139,8 +150,12 @@ function RequestForm({ job, account, config, summary, upsertJob, upsertCustomer 
     <Page title={job ? `Edit request ${job.jobNumber || ''}` : 'Request emergency cleaning'} subtitle="Fill in what happened and how to get in. Fields marked * are required." breadcrumb={crumbs}>
       <form onSubmit={submit} noValidate className="grid gap-4 xl:grid-cols-[1fr_320px]">
         <div className="min-w-0 space-y-4">
-          <Alert tone="danger">{error}{limitHit && <> <Button title="Move to a plan with more call-outs" to="/app/membership/change" variant="secondary" size="sm" className="ml-2">Upgrade plan</Button></>}</Alert>
-          <Alert tone="warning"><strong>Someone must be on site</strong> when the technician arrives, unless management has approved other access arrangements.</Alert>
+          <Alert tone="danger">{error}</Alert>
+          <Alert tone="warning"><strong>A responsible person must be on site</strong> when the technician arrives, unless other access was agreed in writing. If nobody can let us in, the call-out is used and a {fmtMoney(config.missedAccessFee)} + GST fee applies. Urgent? Call <HotlineLink />.</Alert>
+          {!job && summary.suspended && <Alert tone="danger">Your membership payment is overdue, so this visit is charged as an additional call-out until it is paid.</Alert>}
+          {!job && summary.membership.inWaitingPeriod && <Alert tone="info">You are in the first 10 days of membership. We will attend where possible; a one-off {fmtMoney(config.earlyActivationFee)} + GST early activation fee applies (cl. 3.2).</Alert>}
+          {!job && essentialAfterHours && <Alert tone="info">It is after hours. The {sitePlan.name} plan covers 6:00 am to 9:00 pm, so attendance now is at SACC's discretion with a {fmtMoney(config.surchargeAmount)} + GST surcharge; otherwise the response clock starts at 6:00 am.</Alert>}
+          {!job && !essentialAfterHours && surcharge.amount > 0 && <Alert tone="info">{surcharge.reason}: a {fmtMoney(surcharge.amount)} + GST surcharge applies to visits at this time.</Alert>}
 
           <Card title="1. Location and incident" icon={Building}>
             <div className="grid gap-3 md:grid-cols-2">
@@ -154,7 +169,7 @@ function RequestForm({ job, account, config, summary, upsertJob, upsertCustomer 
                   {(config.incidentCategories || []).map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
               </Field>
-              {category === 'Toilet overflow' && <Alert tone="info" className="md:col-span-2">{config.toiletOverflowDisclaimer}</Alert>}
+              {/toilet/i.test(category) && <Alert tone="info" className="md:col-span-2">{config.toiletOverflowDisclaimer}</Alert>}
               <Field label="What happened?" required className="md:col-span-2" error={errors.description}>
                 <textarea rows={3} className={inputCls} value={description} onChange={e => edit(setDescription, 'description')(e.target.value)} placeholder="Describe the incident, the cause and what is affected…" />
               </Field>
@@ -164,6 +179,17 @@ function RequestForm({ job, account, config, summary, upsertJob, upsertCustomer 
               <Field label="When did it happen?" required error={errors.incidentTime}>
                 <input type="datetime-local" className={inputCls} value={incidentTime} onChange={e => edit(setIncidentTime, 'incidentTime')(e.target.value)} />
               </Field>
+              <Field label="Is water involved?" className="md:col-span-2">
+                <select className={inputCls} value={waterType} onChange={e => setWaterType(e.target.value)}>
+                  {WATER_TYPES.map(w => <option key={w.id} value={w.id}>{w.label}</option>)}
+                </select>
+              </Field>
+              {warnings.length > 0 && (
+                <Alert tone="warning" className="md:col-span-2">
+                  <strong>This may be outside membership cover.</strong> SACC will confirm when it acknowledges your request; quoted work does not use a call-out.
+                  <ul className="mt-1 list-disc pl-5">{warnings.map(w => <li key={w}>{w}</li>)}</ul>
+                </Alert>
+              )}
             </div>
           </Card>
 
@@ -174,6 +200,15 @@ function RequestForm({ job, account, config, summary, upsertJob, upsertCustomer 
               </Field>
               <Field label="Is the area safe to enter?">
                 <div className="flex gap-2">{radio('safe', true, isSafe, setIsSafe, 'Yes, safe')}{radio('safe', false, isSafe, setIsSafe, 'No, hazards')}</div>
+              </Field>
+              <Field label="Hazards on site" as="div" className="md:col-span-2">
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {HAZARDS.map(h => (
+                    <label key={h.id} className={cx('flex cursor-pointer items-center gap-2 rounded-xl border px-3 py-2.5 text-sm font-medium', hazards.includes(h.id) ? 'border-amber-400 bg-amber-50 text-amber-900' : 'border-slate-300 text-slate-700')}>
+                      <input type="checkbox" checked={hazards.includes(h.id)} onChange={() => toggleHazard(h.id)} className="h-4 w-4 accent-amber-600" />{h.label}
+                    </label>
+                  ))}
+                </div>
               </Field>
             </div>
           </Card>
@@ -218,7 +253,14 @@ function RequestForm({ job, account, config, summary, upsertJob, upsertCustomer 
                   </div>
                 ))}
               </div>
-            ) : <p className="mt-3 text-xs text-slate-500">Photos help the technician bring the right equipment.</p>}
+            ) : <p className="mt-3 text-xs text-slate-500">Clear photos help SACC confirm the cover and bring the right equipment.</p>}
+            {!job && !photos.length && (
+              <label className="mt-3 flex cursor-pointer items-center gap-2 text-sm text-slate-700">
+                <input type="checkbox" checked={noPhotos} onChange={e => { setNoPhotos(e.target.checked); clear('photos'); }} className="h-4 w-4 accent-[#0286cd]" />
+                I can't take a photo right now (SACC may call to ask for one)
+              </label>
+            )}
+            {errors.photos && <p className="mt-2 text-sm font-medium text-red-600">{errors.photos}</p>}
           </Card>
 
           <StickyActions className="xl:hidden">
@@ -241,8 +283,8 @@ function RequestForm({ job, account, config, summary, upsertJob, upsertCustomer 
                 <div className="flex items-start gap-2 text-sm">
                   <Info className="mt-0.5 h-4 w-4 shrink-0" />
                   {summary.exhausted
-                    ? <span>All {summary.included} included call-outs are used. This request costs ${config.additionalCalloutFee} plus ${config.overageHourlyRate}/hr. <Link to="/app/membership/change" className="font-semibold underline">Upgrade plan</Link></span>
-                    : <span><strong>{summary.remaining} of {summary.included}</strong> included call-outs left this month. This request uses one.</span>}
+                    ? <span>All {summary.included} included call-outs are used this month. If SACC confirms this is covered, it is an extra call-out at {fmtMoney(summary.membership.additionalCalloutFee ?? config.additionalCalloutFee)} + GST, including the first hour. <Link to="/app/membership/change" className="font-semibold underline">Compare plans</Link></span>
+                    : <span><strong>{summary.remaining} of {summary.included}</strong> included call-outs left this month. One is used once SACC confirms the request is covered.</span>}
                 </div>
               </Card>
             )}

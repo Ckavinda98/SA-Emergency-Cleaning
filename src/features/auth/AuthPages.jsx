@@ -21,7 +21,7 @@ function BrandPanel({ compact }) {
     <div className={cx('relative flex flex-col justify-between overflow-hidden bg-gradient-to-br from-brand-dark to-brand text-white', compact ? 'p-5' : 'p-10')}>
       <div className="flex items-center gap-3">
         <span className="rounded-xl bg-white/90 p-1.5"><img src="/logo.webp" alt="" className="h-9 w-auto" /></span>
-        <div><div className="text-lg font-extrabold leading-tight">SA Emergency Cleaning</div><div className="text-xs text-sky-100">Emergency cleaning membership · South Australia</div></div>
+        <div><div className="text-lg font-extrabold leading-tight">SA Commercial Cleaning</div><div className="text-xs text-sky-100">Emergency cleaning membership · South Australia</div></div>
       </div>
       {!compact && (
         <div className="my-10 max-w-md">
@@ -120,7 +120,7 @@ export function RegisterPage() {
       <header className="flex h-16 items-center justify-between border-b border-slate-200 bg-white px-4 md:px-8">
         <Link to="/login" className="flex items-center gap-2.5">
           <span className="rounded-lg bg-[#e4e4e4] px-1.5 py-1"><img src="/logo.webp" alt="" className="h-7 w-auto" /></span>
-          <span className="text-sm font-extrabold text-slate-900 md:text-base">SA Emergency Cleaning</span>
+          <span className="text-sm font-extrabold text-slate-900 md:text-base">SA Commercial Cleaning</span>
         </Link>
         <Button title="Go to the sign-in page" to="/login" variant="ghost" size="sm">Already a member? Sign in</Button>
       </header>

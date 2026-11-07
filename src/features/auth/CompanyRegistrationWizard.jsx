@@ -1,12 +1,14 @@
 import React, { useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
 import {
-  MapPin, AlertTriangle, Award, CheckCircle2, Building, AlertCircle, X, RefreshCw, DollarSign, ChevronRight, FileCheck
+  MapPin, Award, CheckCircle2, Building, AlertCircle, X, RefreshCw, DollarSign, ChevronRight, FileCheck
 } from 'lucide-react';
 import { API_BASE } from '@/shared/config/env.js';
 import { Field, inputCls, useFieldErrors } from '@/shared/ui/index.jsx';
 import { PhoneInput, PasswordInput, AddressAutocomplete } from '@/shared/ui/inputs.jsx';
-import { phoneError, emailError, passwordError, confirmPasswordError, personNameError, textError, abnError, bsbError, accountNumberError, cardNumberError, cardExpiryError, cvcError } from '@shared/validation.js';
+import { phoneError, emailError, passwordError, confirmPasswordError, personNameError, textError, abnError, bsbError, accountNumberError } from '@shared/validation.js';
+import { serviceArea, COMPANY, money } from '@shared/membership.js';
+import { PlanCards } from '@/shared/ui/membership.jsx';
 
 /* =========================================================================
    COMPANY REGISTRATION WIZARD (ADELAIDE ONLY), shown as a page at /register and /admin/customers/new
@@ -42,6 +44,8 @@ export function CompanyRegistrationWizard({ onClose, onRegisterSuccess, isAdminM
   // Location state (Adelaide restricted)
   const [locationName, setLocationName] = useState('Primary Adelaide Office');
   const [selectedSuburb, setSelectedSuburb] = useState('Adelaide CBD (5000)');
+  const [referralCode, setReferralCode] = useState('');
+  const [billingFrequency, setBillingFrequency] = useState('MONTHLY');
   const [streetAddress, setStreetAddress] = useState('');
   const [locationError, setLocationError] = useState('');
 
@@ -52,13 +56,10 @@ export function CompanyRegistrationWizard({ onClose, onRegisterSuccess, isAdminM
   const [selectedPlan, setSelectedPlan] = useState('business');
 
   // Payment State
-  const [paymentType, setPaymentType] = useState('DIRECT_DEBIT'); // DIRECT_DEBIT or CREDIT_CARD
+  const [paymentType, setPaymentType] = useState('DIRECT_DEBIT'); // DIRECT_DEBIT or CARD (secure payment link)
   const [bsb, setBsb] = useState('105-000');
   const [accountNumber, setAccountNumber] = useState('12345678');
   const [accountName, setAccountName] = useState('');
-  const [cardNumber, setCardNumber] = useState('');
-  const [cardExpiry, setCardExpiry] = useState('12/28');
-  const [cardCvc, setCardCvc] = useState('');
 
   // Login password. Public sign-up: the customer chooses it. Admin mode: a random temporary password the admin passes on.
   const [adminPassword, setAdminPassword] = useState(() => {
@@ -79,12 +80,14 @@ export function CompanyRegistrationWizard({ onClose, onRegisterSuccess, isAdminM
   // Wraps a setter so editing a field clears its message
   const edit = (setter, field) => (v) => { setter(v); clear(field); };
 
-  const inServiceArea = (postcode) => { const n = Number(postcode); return n >= 5000 && n <= 5199; };
+  // Any South Australian postcode can apply: metro Adelaide is covered, other SA sites are accepted at SACC's discretion (cl. 18)
+  const inServiceArea = (postcode) => { const n = Number(postcode); return n >= 5000 && n <= 5999; };
+  const area = serviceArea(`${streetAddress}, ${selectedSuburb.replace(/ \((\d+)\)$/, ' SA $1')}`, config);
 
   // A picked Google suggestion fills the street and the suburb / postcode
   const onAddressPicked = (a) => {
     if (a.postcode && !inServiceArea(a.postcode)) {
-      setFieldError('streetAddress', `${a.suburb || 'This address'} ${a.postcode} is outside our service area (Adelaide postcodes 5000–5199).`);
+      setFieldError('streetAddress', `${a.suburb || 'This address'} ${a.postcode} is outside South Australia. SACC services SA sites only.`);
       return;
     }
     if (a.suburb && a.postcode) setSelectedSuburb(`${a.suburb} (${a.postcode})`);
@@ -110,16 +113,13 @@ export function CompanyRegistrationWizard({ onClose, onRegisterSuccess, isAdminM
     }, values);
   };
 
-  // Payment details: card fields for a card, bank fields for direct debit
-  const validatePayment = () => check(paymentType === 'CREDIT_CARD' ? {
-    cardNumber: v => cardNumberError(v.cardNumber),
-    cardExpiry: v => cardExpiryError(v.cardExpiry),
-    cardCvc: v => cvcError(v.cardCvc)
-  } : {
+  // Payment details: bank fields for direct debit. Card numbers are never typed into this app:
+  // card payments go through the payment provider's secure page.
+  const validatePayment = () => check(paymentType === 'CARD' ? {} : {
     bsb: v => bsbError(v.bsb),
     accountNumber: v => accountNumberError(v.accountNumber),
     accountName: v => textError(v.accountName, { label: 'Account holder name' })
-  }, { cardNumber, cardExpiry, cardCvc, bsb, accountNumber, accountName: accountName || businessName });
+  }, { bsb, accountNumber, accountName: accountName || businessName });
 
   const validateCredentials = () => check({ adminPassword: v => passwordError(v.adminPassword) }, { adminPassword });
 
@@ -151,7 +151,7 @@ export function CompanyRegistrationWizard({ onClose, onRegisterSuccess, isAdminM
     setSubmitting(true);
     setSubmitError('');
 
-    const fullAddressString = `${streetAddress}, ${selectedSuburb}, SA`;
+    const fullAddressString = `${streetAddress}, ${selectedSuburb.replace(/ \((\d+)\)$/, ' SA $1')}`;
     const payload = {
       businessName,
       abn: abn.replace(/\s/g, ''),
@@ -160,8 +160,10 @@ export function CompanyRegistrationWizard({ onClose, onRegisterSuccess, isAdminM
       email,
       password: adminPassword,
       membershipPlan: selectedPlan,
+      billingFrequency,
+      referralCode: referralCode.trim() || undefined,
       paymentType,
-      paymentDetails: paymentType === 'CREDIT_CARD' ? { cardNumber, cardExpiry, cardCvc } : { bsb, accountNumber, accountName },
+      paymentDetails: paymentType === 'CARD' ? undefined : { bsb, accountNumber, accountName },
       address: fullAddressString,
       locationName,
       isCreatedByAdmin: isAdminMode
@@ -207,7 +209,7 @@ export function CompanyRegistrationWizard({ onClose, onRegisterSuccess, isAdminM
               {s.label}
             </li>
           ))}
-          <li className="px-3 pt-3 text-[11px] text-slate-500">Service covers Adelaide, South Australia (postcodes 5000–5199).</li>
+          <li className="px-3 pt-3 text-[11px] text-slate-500">Covers the Adelaide metro area. Other South Australian sites can be accepted with a travel charge. 24/7 hotline {COMPANY.hotline}.</li>
         </ol>
       </aside>
       <div className="min-w-0 space-y-6 rounded-2xl border border-slate-200 bg-white p-5 text-sm text-slate-800 shadow-sm md:p-8">
@@ -231,7 +233,7 @@ export function CompanyRegistrationWizard({ onClose, onRegisterSuccess, isAdminM
           <form onSubmit={handleNextStep} noValidate className="space-y-4">
             <div className="bg-blue-50 border border-blue-200 p-3 rounded-xl flex items-center gap-2 text-blue-900 font-medium">
               <MapPin className="w-4 h-4 text-[#0286cd] shrink-0" />
-              <span>Note: Service coverage is restricted exclusively to <strong>Adelaide, South Australia</strong> commercial locations.</span>
+              <span>Membership covers commercial sites in the <strong>Adelaide metro area</strong>. Sites elsewhere in South Australia can be accepted at SACC's discretion, with travel at {money(config?.travelRatePerKm ?? 1.5)}/km each way.</span>
             </div>
 
             <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
@@ -269,7 +271,7 @@ export function CompanyRegistrationWizard({ onClose, onRegisterSuccess, isAdminM
             <div className="border-t border-slate-200 pt-2">
               <h4 className="mb-2 flex items-center gap-1.5 text-sm font-bold text-slate-900">
                 <MapPin className="h-4 w-4 text-[#0286cd]" />
-                Primary site location (Adelaide only)
+                Primary site location
               </h4>
               <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <Field label="Site / facility name" error={errors.locationName}>
@@ -288,6 +290,16 @@ export function CompanyRegistrationWizard({ onClose, onRegisterSuccess, isAdminM
                 <AddressAutocomplete value={streetAddress} onChange={edit(setStreetAddress, 'streetAddress')} onSelect={onAddressPicked}
                   placeholder="e.g. 120 Grenfell Street" aria-invalid={Boolean(errors.streetAddress)} className={errors.streetAddress ? '!border-red-400 !bg-red-50/40' : ''} />
               </Field>
+              {streetAddress.trim().length > 3 && area === 'OUTSIDE_METRO' && (
+                <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
+                  This site is outside the Adelaide metro area. SACC will confirm whether it can accept it. Visits there have a travel charge of {money(config?.travelRatePerKm ?? 1.5)}/km each way from the Adelaide GPO, and the 2–4 hour response target does not apply.
+                </div>
+              )}
+              {!isAdminMode && (
+                <Field label="Referral code (optional)" className="mt-3 max-w-xs" hint="From a business that referred you">
+                  <input className={inputCls} value={referralCode} onChange={e => setReferralCode(e.target.value.toUpperCase())} placeholder="REF-XXXXXX" />
+                </Field>
+              )}
             </div>
 
             <div className="pt-4 flex justify-end gap-3">
@@ -319,18 +331,28 @@ export function CompanyRegistrationWizard({ onClose, onRegisterSuccess, isAdminM
               SA Commercial Cleaning Membership Terms & Conditions
             </h4>
 
-            <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-3 max-h-56 overflow-y-auto text-[11px] text-slate-700 leading-relaxed font-normal">
-              <p className="font-bold text-slate-900">1. Coverage & Response Time (SLA)</p>
-              <p>SA Commercial Cleaning Services Pty Ltd (SACC) provides emergency cleaning dispatch for registered business accounts located within Adelaide, South Australia. Target attendance is 2 to 4 hours from emergency submission.</p>
-
-              <p className="font-bold text-slate-900">2. Call-out Labor Allowance</p>
-              <p>Each included call-out covers initial dispatch and up to 1 hour of emergency cleaning labor. Subsequent labor is billed at standard overage rates ($120/hr).</p>
-
-              <p className="font-bold text-slate-900">3. Plumbing & Drainage Disclaimer</p>
-              <p>SACC provides cleaning of affected surfaces only. SACC does not provide plumbing, pipe unblocking, drain clearing, or toilet unclogging services.</p>
-
-              <p className="font-bold text-slate-900">4. Tenure & Cancellation Policy</p>
-              <p>Memberships carry a 6-month minimum tenure requirement. Points redemptions unlock after 6 consecutive active months.</p>
+            <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-3 max-h-72 overflow-y-auto text-[11px] text-slate-700 leading-relaxed font-normal">
+              <p className="text-slate-500">Summary of the Membership Agreement & Terms v1.0 of {COMPANY.legalName} (ACN {COMPANY.acn}). All prices exclude GST.</p>
+              <p className="font-bold text-slate-900">1. Term and billing</p>
+              <p>Membership runs for 12 months from the Activation Date (your first payment) and renews automatically for further 12-month periods. Fees are billed in advance, monthly or annually. Extra charges are invoiced after each visit and are due within 7 days. If a payment is unpaid 7 days after notice, benefits are suspended until it is paid.</p>
+              <p className="font-bold text-slate-900">2. Waiting period</p>
+              <p>Included call-outs can be used from day 11. During the first 10 days SACC attends where possible and a one-off {money(config?.earlyActivationFee ?? 100)} early activation fee applies.</p>
+              <p className="font-bold text-slate-900">3. Call-outs and labour</p>
+              <p>Each included call-out covers one visit and the first hour of one technician. Call-outs reset on the 1st of each month and do not roll over. When they are used up you can still request help: each extra call-out is {money(config?.additionalCalloutFee ?? 30)} plus labour after the first hour at your plan's rate (Essential $95/hr, Business $90/hr, Premium $85/hr), billed in whole hours per technician.</p>
+              <p className="font-bold text-slate-900">4. Service windows and surcharges</p>
+              <p>Essential covers 6:00 am to 9:00 pm, 7 days; Business and Premium cover 24/7. A {money(config?.surchargeAmount ?? 50)} surcharge applies after hours (Business, or Essential at SACC's discretion) and on public holidays (Essential and Business); only one surcharge per visit. Premium has no surcharges.</p>
+              <p className="font-bold text-slate-900">5. Response time and priority</p>
+              <p>SACC aims to attend within 2 to 4 hours of acknowledging a valid request, counted inside your plan's service window. Dispatch priority is Premium, then Business, then Essential. If SACC arrives more than 4 hours late for reasons within its control, you receive 50 reward points.</p>
+              <p className="font-bold text-slate-900">6. What is covered</p>
+              <p>Spills, vomit/urine/faeces, toilet overflow (cleaning only: no plumbing, drain clearing or unclogging), burst pipes and wet carpet up to about 10 m² of clean water, slip hazards, carpet spots, broken glass, minor graffiti up to 2 m², kitchen or bathroom clean-ups and bin leakage. Bigger or specialist jobs (grey or black water, mould, biohazard and more) are quoted separately and do not use a call-out. Special disposal is charged at cost plus {money(config?.disposalHandlingFee ?? 25)}.</p>
+              <p className="font-bold text-slate-900">7. Access and cancellations</p>
+              <p>A responsible person must be on site. If the technician cannot get in, or you cancel after a technician is dispatched, the call-out is used and a $100 fee applies. Cancelling before dispatch is free.</p>
+              <p className="font-bold text-slate-900">8. Rewards</p>
+              <p>Earn 1 point per $1 of membership fees and 30 points for each unused call-out. 1 point = $1 off periodical services. Points can be used after 6 consecutive months and expire 12 months after they are earned. Referrals earn 100 points.</p>
+              <p className="font-bold text-slate-900">9. Plan changes and cancellation</p>
+              <p>Upgrades apply immediately (fee difference charged pro-rata); downgrades start from the next billing period. You can cancel at any time once 30 days have passed since your last call-out; prepaid fees are refunded pro-rata and all reward points are cancelled.</p>
+              <p className="font-bold text-slate-900">10. Insurance</p>
+              <p>SACC holds {COMPANY.publicLiability} public liability insurance. SACC does not prepare insurance reports or deal with insurers.</p>
             </div>
 
             <label className="flex items-start gap-3 bg-blue-50 p-4 rounded-xl border border-blue-200 cursor-pointer">
@@ -341,7 +363,7 @@ export function CompanyRegistrationWizard({ onClose, onRegisterSuccess, isAdminM
                 className="mt-0.5 w-4 h-4 text-[#0286cd] rounded border-slate-300 focus:ring-[#0286cd]"
               />
               <span className="font-bold text-slate-900 text-xs">
-                I have read and agree to the SA Commercial Cleaning Membership Terms & Conditions, 6-month tenure requirement, and emergency callout disclaimers.
+                I have read and agree to the {COMPANY.legalName} Membership Agreement & Terms, including the 12-month term, the 10-day waiting period and the call-out rules.
               </span>
             </label>
 
@@ -378,66 +400,18 @@ export function CompanyRegistrationWizard({ onClose, onRegisterSuccess, isAdminM
               Choose Your Emergency Membership Package
             </h4>
 
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {/* Essential */}
-              <div 
-                onClick={() => setSelectedPlan('essential')}
-                className={`p-4 rounded-2xl border-2 cursor-pointer transition-all space-y-3 relative ${
-                  selectedPlan === 'essential' ? 'border-[#0286cd] bg-blue-50/50 shadow-md' : 'border-slate-200 hover:border-slate-300 bg-white'
-                }`}
-              >
-                <div className="flex justify-between items-center">
-                  <span className="font-bold text-slate-900 text-sm">Essential</span>
-                  <input type="radio" checked={selectedPlan === 'essential'} onChange={() => setSelectedPlan('essential')} className="text-[#0286cd]" />
-                </div>
-                <div className="text-2xl font-black text-slate-900">$99 <span className="text-xs text-slate-500 font-normal">/ month</span></div>
-                <ul className="space-y-1.5 text-[11px] text-slate-600 font-medium">
-                  <li className="flex items-center gap-1.5"><CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" /> 1 Call-out Included / mo</li>
-                  <li className="flex items-center gap-1.5"><CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" /> 2–4 Hr Target Response</li>
-                  <li className="flex items-center gap-1.5"><CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" /> Earn 100 pts / month</li>
-                </ul>
+            <PlanCards plans={config?.membershipPlans || []} config={config} selected={selectedPlan} onSelect={setSelectedPlan} />
+            <div className="rounded-2xl border border-slate-200 p-4">
+              <div className="mb-2 text-xs font-bold text-slate-900">How would you like to be billed?</div>
+              <div className="grid gap-2 sm:grid-cols-2">
+                {[['MONTHLY', 'Monthly', 'Billed on the same day each month'], ['ANNUAL', 'Annually', 'Billed once a year on your activation date']].map(([id, label, hint]) => (
+                  <label key={id} className={`flex cursor-pointer items-start gap-2 rounded-xl border p-3 ${billingFrequency === id ? 'border-[#0286cd] bg-blue-50' : 'border-slate-200'}`}>
+                    <input type="radio" name="billing" checked={billingFrequency === id} onChange={() => setBillingFrequency(id)} className="mt-0.5" />
+                    <span><span className="block text-sm font-bold text-slate-900">{label}</span><span className="text-xs text-slate-500">{hint}</span></span>
+                  </label>
+                ))}
               </div>
-
-              {/* Business (Recommended) */}
-              <div 
-                onClick={() => setSelectedPlan('business')}
-                className={`p-4 rounded-2xl border-2 cursor-pointer transition-all space-y-3 relative ${
-                  selectedPlan === 'business' ? 'border-[#0286cd] bg-blue-50/50 shadow-md' : 'border-slate-200 hover:border-slate-300 bg-white'
-                }`}
-              >
-                <div className="absolute -top-3 left-1/2 -translate-x-1/2 bg-[#0286cd] text-white text-[9px] font-black uppercase px-2.5 py-0.5 rounded-full shadow-sm">
-                  MOST POPULAR
-                </div>
-                <div className="flex justify-between items-center">
-                  <span className="font-bold text-slate-900 text-sm">Business</span>
-                  <input type="radio" checked={selectedPlan === 'business'} onChange={() => setSelectedPlan('business')} className="text-[#0286cd]" />
-                </div>
-                <div className="text-2xl font-black text-slate-900">$199 <span className="text-xs text-slate-500 font-normal">/ month</span></div>
-                <ul className="space-y-1.5 text-[11px] text-slate-600 font-medium">
-                  <li className="flex items-center gap-1.5"><CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" /> 2 Call-outs Included / mo</li>
-                  <li className="flex items-center gap-1.5"><CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" /> Priority 2–4 Hr Dispatch</li>
-                  <li className="flex items-center gap-1.5"><CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" /> Earn 200 pts / month</li>
-                </ul>
-              </div>
-
-              {/* Premium */}
-              <div 
-                onClick={() => setSelectedPlan('premium')}
-                className={`p-4 rounded-2xl border-2 cursor-pointer transition-all space-y-3 relative ${
-                  selectedPlan === 'premium' ? 'border-[#0286cd] bg-blue-50/50 shadow-md' : 'border-slate-200 hover:border-slate-300 bg-white'
-                }`}
-              >
-                <div className="flex justify-between items-center">
-                  <span className="font-bold text-slate-900 text-sm">Premium</span>
-                  <input type="radio" checked={selectedPlan === 'premium'} onChange={() => setSelectedPlan('premium')} className="text-[#0286cd]" />
-                </div>
-                <div className="text-2xl font-black text-slate-900">$399 <span className="text-xs text-slate-500 font-normal">/ month</span></div>
-                <ul className="space-y-1.5 text-[11px] text-slate-600 font-medium">
-                  <li className="flex items-center gap-1.5"><CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" /> 4 Call-outs Included / mo</li>
-                  <li className="flex items-center gap-1.5"><CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" /> VIP Rapid Dispatch</li>
-                  <li className="flex items-center gap-1.5"><CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 shrink-0" /> Earn 400 pts / month</li>
-                </ul>
-              </div>
+              <p className="mt-2 text-xs text-slate-500">Adding more sites later? Membership fees are 10% off for 2–5 sites and 15% off for 6–10 sites.</p>
             </div>
 
             <div className="pt-4 flex justify-between gap-3">
@@ -489,9 +463,9 @@ export function CompanyRegistrationWizard({ onClose, onRegisterSuccess, isAdminM
               <button
                 type="button"
                 title="Pay each month by credit or debit card"
-                onClick={() => setPaymentType('CREDIT_CARD')}
+                onClick={() => setPaymentType('CARD')}
                 className={`p-3.5 rounded-xl border-2 font-extrabold text-xs flex items-center justify-center gap-2 transition-all cursor-pointer ${
-                  paymentType === 'CREDIT_CARD'
+                  paymentType === 'CARD'
                     ? 'border-[#0286cd] bg-blue-50 text-[#0286cd] shadow-sm'
                     : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
                 }`}
@@ -526,33 +500,11 @@ export function CompanyRegistrationWizard({ onClose, onRegisterSuccess, isAdminM
               </div>
             )}
 
-            {/* Credit Card Form Fields */}
-            {paymentType === 'CREDIT_CARD' && (
-              <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-3">
-                <span className="text-[10px] text-blue-700 bg-blue-100 font-bold px-2 py-0.5 rounded border border-blue-200 uppercase">
-                  Secure Credit Card Billing
-                </span>
-                <Field label="Card number" required error={errors.cardNumber}>
-                  <input type="text" inputMode="numeric" autoComplete="cc-number" maxLength={23} value={cardNumber} placeholder="4532 1234 5678 8892"
-                    onChange={(e) => edit(setCardNumber, 'cardNumber')(e.target.value.replace(/[^\d\s]/g, ''))}
-                    className={`${inputCls} font-mono font-bold`} />
-                </Field>
-                <div className="grid grid-cols-2 gap-3">
-                  <Field label="Expiry date" required error={errors.cardExpiry}>
-                    <input type="text" inputMode="numeric" autoComplete="cc-exp" maxLength={5} value={cardExpiry} placeholder="MM/YY"
-                      onChange={(e) => {
-                        let v = e.target.value.replace(/[^\d/]/g, '');
-                        if (/^\d{3,4}$/.test(v)) v = `${v.slice(0, 2)}/${v.slice(2)}`;
-                        edit(setCardExpiry, 'cardExpiry')(v);
-                      }}
-                      className={`${inputCls} font-mono font-bold`} />
-                  </Field>
-                  <Field label="CVC code" required error={errors.cardCvc}>
-                    <input type="text" inputMode="numeric" autoComplete="cc-csc" maxLength={4} value={cardCvc} placeholder="123"
-                      onChange={(e) => edit(setCardCvc, 'cardCvc')(e.target.value.replace(/[^\d]/g, ''))}
-                      className={`${inputCls} font-mono font-bold`} />
-                  </Field>
-                </div>
+            {/* Card: no card numbers in this app (PCI DSS). SACC sends a secure payment link from its payment provider. */}
+            {paymentType === 'CARD' && (
+              <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-2 text-xs text-slate-700">
+                <span className="text-[10px] text-blue-700 bg-blue-100 font-bold px-2 py-0.5 rounded border border-blue-200 uppercase">Secure card payment</span>
+                <p>For your security, card details are not entered in this app. After you register, SACC sends a secure payment link from its payment provider to {email || 'your company email'} to add your card.</p>
               </div>
             )}
 

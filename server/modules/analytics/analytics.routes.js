@@ -5,5 +5,6 @@ import { requireRole } from '../../middleware/requireRole.js';
 const router = Router();
 
 router.get('/analytics/summary', requireRole('ADMIN', 'CONFIG'), controller.summary);
+router.post('/admin/housekeeping', requireRole('ADMIN', 'CONFIG'), controller.housekeeping);
 
 export default router;

@@ -11,8 +11,11 @@ export const FINISHED_STATUSES = ['COMPLETED', 'REPORT_ISSUED', 'CLOSED', 'CANCE
 // Completed work (used by reports and analytics)
 export const COMPLETED_STATUSES = ['COMPLETED', 'REPORT_ISSUED', 'CLOSED'];
 
+// A technician has been sent (cl. 12.5: cancelling after this uses the call-out and costs $100)
+export const DISPATCHED_STATUSES = ['TECH_ASSIGNED', 'TECHNICIAN_ASSIGNED', 'ACCEPTED', 'TRAVELLING', 'ARRIVED', 'IN_PROGRESS'];
+
 // Still being worked on
-export const ACTIVE_STATUSES = ['NEW', 'SUBMITTED', 'ACCEPTED', 'TECH_ASSIGNED', 'TECHNICIAN_ASSIGNED', 'TRAVELLING', 'ARRIVED', 'IN_PROGRESS'];
+export const ACTIVE_STATUSES = ['NEW', 'SUBMITTED', 'UNDER_REVIEW', 'ACCEPTED', 'TECH_ASSIGNED', 'TECHNICIAN_ASSIGNED', 'TRAVELLING', 'ARRIVED', 'IN_PROGRESS'];
 
 // The steps a technician may take: current status -> allowed next statuses
 export const TECHNICIAN_TRANSITIONS = {
@@ -22,7 +25,7 @@ export const TECHNICIAN_TRANSITIONS = {
   TECHNICIAN_ASSIGNED: ['ACCEPTED'],
   ACCEPTED: ['TRAVELLING'],
   TRAVELLING: ['ARRIVED'],
-  ARRIVED: ['IN_PROGRESS', 'UNABLE_TO_ACCESS'],
+  ARRIVED: ['IN_PROGRESS'], // missed access and reclassification have their own steps (POST /jobs/:id/missed-access, /reclassify)
   IN_PROGRESS: ['COMPLETED']
 };
 
@@ -30,13 +33,14 @@ export const canTechnicianMove = (from, to) => (TECHNICIAN_TRANSITIONS[from] || 
 
 // Lifecycle stages shown on the service report, with the statuses that mark each one
 export const TIMELINE_STAGES = [
-  { label: '1. Request Submitted', statuses: ['NEW', 'SUBMITTED'] },
-  { label: '2. Admin Dispatched', statuses: ['TECH_ASSIGNED', 'TECHNICIAN_ASSIGNED'] },
-  { label: '3. Technician Accepted', statuses: ['ACCEPTED'] },
-  { label: '4. En Route (Transit Start)', statuses: ['TRAVELLING'] },
-  { label: '5. Arrived On-Site', statuses: ['ARRIVED'] },
-  { label: '6. Cleaning Commenced', statuses: ['IN_PROGRESS'] },
-  { label: '7. Job Completed', statuses: ['COMPLETED'] }
+  { label: '1. Request received', statuses: ['NEW', 'SUBMITTED'] },
+  { label: '2. Acknowledged by SACC', statuses: ['UNDER_REVIEW'] },
+  { label: '3. Technician dispatched', statuses: ['TECH_ASSIGNED', 'TECHNICIAN_ASSIGNED'] },
+  { label: '4. Technician accepted', statuses: ['ACCEPTED'] },
+  { label: '5. On the way', statuses: ['TRAVELLING'] },
+  { label: '6. Arrived on site', statuses: ['ARRIVED'] },
+  { label: '7. Work started', statuses: ['IN_PROGRESS'] },
+  { label: '8. Completed', statuses: ['COMPLETED'] }
 ];
 
 export const TECHNICIAN_STATES = ['AVAILABLE', 'ON_SITE', 'OFF_DUTY'];
