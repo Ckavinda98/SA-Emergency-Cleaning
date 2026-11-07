@@ -1,5 +1,5 @@
 // API client: every fetch to API_BASE gets the access token, and a 401 triggers one refresh-token
-// rotation and a retry. If the refresh fails the session ends and the app goes back to #login.
+// rotation and a retry. If the refresh fails the session ends and the app goes back to /login.
 // Installed once from main.jsx, so components keep calling fetch(`${API_BASE}/...`) as before.
 import { Preferences } from '@capacitor/preferences';
 import { API_BASE } from '@/shared/config/env.js';
@@ -54,12 +54,10 @@ export function installAuthFetch() {
           await Preferences.remove({ key: 'sacc_access_token' });
           await Preferences.remove({ key: 'sacc_refresh_token' });
           window.dispatchEvent(new Event('sacc:session-ended'));
-          window.location.hash = '#login';
         }
       } else {
         localStorage.removeItem('sacc_current_user');
         window.dispatchEvent(new Event('sacc:session-ended'));
-        window.location.hash = '#login';
       }
     }
     return response;

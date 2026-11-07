@@ -1,7 +1,10 @@
-export { CustomerPortal } from './CustomerPortal.jsx';
-export { ChangePlanModal } from './ChangePlanModal.jsx';
-export { CalloutExplanationModal } from './CalloutExplanationModal.jsx';
-export { CompanyProfileModal } from './CompanyProfileModal.jsx';
-export { ManageSitesSection } from './ManageSitesSection.jsx';
-export { CancelSubscriptionModal } from './CancelSubscriptionModal.jsx';
-export { PointsRedemptionModal } from './PointsRedemptionModal.jsx';
+// Customer pages (each one has its own URL; the old popups are gone)
+export { CustomerDashboard } from './pages/CustomerDashboard.jsx';
+export { RequestsPage } from './pages/RequestsPage.jsx';
+export { RequestDetailPage } from './pages/RequestDetailPage.jsx';
+export { RequestFormPage } from './pages/RequestFormPage.jsx';
+export { RewardsPage } from './pages/RewardsPage.jsx';
+export { MembershipPage, ChangePlanPage, CancelMembershipPage } from './pages/MembershipPages.jsx';
+export { AccountPage } from './pages/AccountPage.jsx';
+export { ServiceReportPage } from './pages/ServiceReportPage.jsx';
+export { JobList } from './components/JobList.jsx';

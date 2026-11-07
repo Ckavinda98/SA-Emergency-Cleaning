@@ -1,2 +1,1 @@
-export { TechnicianApp } from './TechnicianApp.jsx';
-export { TechnicianProfileModal } from './TechnicianProfileModal.jsx';
+export { TechJobsPage, TechJobDetailPage, TechHistoryPage, TechProfilePage } from './pages/TechnicianPages.jsx';

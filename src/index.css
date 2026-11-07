@@ -1,16 +1,27 @@
 @import "tailwindcss";
 
+/* Design tokens. The same values are listed in design/tokens.json for the native apps. */
+@theme {
+  --color-brand: #0286cd;
+  --color-brand-hover: #026fa8;
+  --color-brand-dark: #0f3cad;
+  --color-surface: #f4f6f9;
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-heading: 'Outfit', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+}
+
+/* "fit": desktop screens tall enough to show a whole dashboard without page scrolling */
+@custom-variant fit (@media (min-width: 1280px) and (min-height: 700px));
+
 :root {
   --font-heading: 'Outfit', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   --font-body: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  
-  /* User Palette & Clean Light Theme Tokens */
   --sacc-page-bg: #f4f6f9;
-  --sacc-white-card: #ffffff;
   --sacc-cyan-primary: #0286cd;
-  --sacc-dark-charcoal: #252525;
   --sacc-royal-navy: #0f3cad;
 }
+
+html, body, #root { height: 100%; }
 
 body {
   font-family: var(--font-body);
@@ -19,63 +30,26 @@ body {
   margin: 0;
   padding: 0;
   -webkit-font-smoothing: antialiased;
+  -webkit-tap-highlight-color: transparent;
 }
 
-h1, h2, h3, h4, h5, h6 {
-  font-family: var(--font-heading);
-}
+h1, h2, h3, h4, h5, h6 { font-family: var(--font-heading); }
 
-/* Premium White UI Cards */
+/* Phones with a notch / home indicator (Capacitor iOS & Android) */
+.safe-bottom { padding-bottom: env(safe-area-inset-bottom); }
+.safe-top { padding-top: env(safe-area-inset-top); }
+
 .glass-card {
   background: #ffffff;
   border: 1px solid #e2e8f0;
   box-shadow: 0 10px 25px -5px rgba(15, 23, 42, 0.06), 0 8px 10px -6px rgba(15, 23, 42, 0.04);
 }
 
-.glass-nav {
-  background: #0f3cad;
-  border-bottom: 3px solid #0286cd;
-  box-shadow: 0 4px 20px rgba(15, 60, 173, 0.2);
-}
+.login-card-gradient { background: linear-gradient(135deg, #eef2f7 0%, #e2e8f0 100%); }
 
-/* Clean Neutral Login Background */
-.login-card-gradient {
-  background: linear-gradient(135deg, #eef2f7 0%, #e2e8f0 100%);
-}
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
 
-/* Custom Scrollbars */
-::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-::-webkit-scrollbar-track {
-  background: #f1f5f9;
-}
-::-webkit-scrollbar-thumb {
-  background: #0286cd;
-  border-radius: 4px;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: #0f3cad;
-}
-
-/* Custom Scroll Container Utility */
-.custom-scroll-container {
-  overflow-y: auto;
-  padding-right: 4px;
-  scroll-behavior: smooth;
-}
-.custom-scroll-container::-webkit-scrollbar {
-  width: 6px;
-}
-.custom-scroll-container::-webkit-scrollbar-track {
-  background: #e2e8f0;
-  border-radius: 8px;
-}
-.custom-scroll-container::-webkit-scrollbar-thumb {
-  background: #0286cd;
-  border-radius: 8px;
-}
-.custom-scroll-container::-webkit-scrollbar-thumb:hover {
-  background: #0f3cad;
-}
+.custom-scroll-container { overflow-y: auto; scroll-behavior: smooth; }

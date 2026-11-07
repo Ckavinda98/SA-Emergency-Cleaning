@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest';
 import { canTechnicianMove } from '../../shared/jobStatus.js';
 import { allowedCallouts, redemptionPoints } from '../../shared/config.js';
-import { canOpenHash } from '../../shared/roles.js';
+import { canOpenHash, canOpenPath, tabForPath, LEGACY_HASH_PATHS } from '../../shared/roles.js';
 import { isAdelaideLocation } from '../../shared/location.js';
 import { technicianCreateSchema } from '../../shared/schemas.js';
 
@@ -30,5 +30,31 @@ describe('shared business rules', () => {
   it('validates a new technician', () => {
     expect(technicianCreateSchema.safeParse({ name: 'A', phone: '0400000000' }).success).toBe(false);
     expect(technicianCreateSchema.safeParse({ name: 'Al Smith', phone: '0400 000 000' }).success).toBe(true);
+  });
+});
+
+
+describe('page paths (redesigned web app)', () => {
+  it('maps paths to workspaces', () => {
+    expect(tabForPath('/app')).toBe('customer');
+    expect(tabForPath('/app/requests/new')).toBe('customer');
+    expect(tabForPath('/apple')).toBe(null);
+    expect(tabForPath('/tech/jobs/1')).toBe('technician');
+    expect(tabForPath('/admin/customers')).toBe('admin');
+    expect(tabForPath('/settings/pricing')).toBe('config');
+    expect(tabForPath('/login')).toBe(null);
+  });
+  it('lets each role open only its own pages', () => {
+    expect(canOpenPath('customer', '/app/rewards')).toBe(true);
+    expect(canOpenPath('customer', '/admin/dispatch')).toBe(false);
+    expect(canOpenPath('technician', '/app')).toBe(false);
+    expect(canOpenPath('config', '/settings/pricing')).toBe(true);
+    expect(canOpenPath('config', '/admin/dispatch')).toBe(false);
+    expect(canOpenPath('admin', '/app/rewards')).toBe(true);
+    expect(canOpenPath('admin', '/tech/jobs')).toBe(true);
+  });
+  it('redirects every old hash link to a page', () => {
+    for (const path of Object.values(LEGACY_HASH_PATHS)) expect(path.startsWith('/')).toBe(true);
+    expect(LEGACY_HASH_PATHS['#customer/profile']).toBe('/app/account/profile');
   });
 });

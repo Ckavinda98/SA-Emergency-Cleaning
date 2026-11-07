@@ -1,2 +1,2 @@
-export { LoginPortal } from './LoginPortal.jsx';
-export { ADELAIDE_LOCATIONS, CompanyRegistrationModal } from './CompanyRegistrationModal.jsx';
+export { LoginPage, RegisterPage, AdminRegisterCompanyPage } from './AuthPages.jsx';
+export { ADELAIDE_LOCATIONS, CompanyRegistrationWizard } from './CompanyRegistrationWizard.jsx';

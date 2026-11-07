@@ -1,1 +1,1 @@
-export { DynamicConfigStudio } from './DynamicConfigStudio.jsx';
+export { SettingsPage } from './SettingsPage.jsx';

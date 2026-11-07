@@ -1,11 +1,12 @@
 import React, { useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import {
   MapPin, AlertTriangle, Award, CheckCircle2, Building, AlertCircle, X, RefreshCw, DollarSign, ChevronRight, FileCheck
 } from 'lucide-react';
 import { API_BASE } from '@/shared/config/env.js';
 
 /* =========================================================================
-   MODAL: COMPANY MULTI-STEP REGISTRATION (ADELAIDE ONLY)
+   COMPANY REGISTRATION WIZARD (ADELAIDE ONLY), shown as a page at /register and /admin/customers/new
    ========================================================================= */
 export const ADELAIDE_LOCATIONS = [
   { suburb: 'Adelaide CBD', postcode: '5000' },
@@ -22,8 +23,13 @@ export const ADELAIDE_LOCATIONS = [
   { suburb: 'Modbury', postcode: '5092' }
 ];
 
-export function CompanyRegistrationModal({ onClose, onRegisterSuccess, isAdminMode = false, config }) {
-  const [step, setStep] = useState(1);
+export function CompanyRegistrationWizard({ onClose, onRegisterSuccess, isAdminMode = false, config }) {
+  // Each step has its own URL (?step=2 …) so Back / Forward and refresh behave like a website.
+  // You can only jump to steps you have already reached.
+  const [params, setParams] = useSearchParams();
+  const [maxStep, setMaxStep] = useState(1);
+  const step = Math.min(Math.max(1, Number(params.get('step')) || 1), maxStep);
+  const setStep = (n) => { setMaxStep(m => Math.max(m, n)); setParams({ step: String(n) }); window.scrollTo?.(0, 0); document.getElementById('main')?.scrollTo(0, 0); };
   const [businessName, setBusinessName] = useState('');
   const [abn, setAbn] = useState('');
   const [primaryContactName, setPrimaryContactName] = useState('');
@@ -183,35 +189,36 @@ export function CompanyRegistrationModal({ onClose, onRegisterSuccess, isAdminMo
     }
   };
 
-  return (
-    <div className="fixed inset-0 z-50 bg-slate-950/80 backdrop-blur-md flex items-center justify-center p-4">
-      <div className="bg-white max-w-2xl w-full p-6 md:p-8 rounded-3xl space-y-6 border border-slate-200 shadow-2xl text-xs text-slate-800 relative max-h-[90vh] overflow-y-auto">
-        {/* Modal Header */}
-        <div className="flex items-center justify-between border-b border-slate-200 pb-4">
-          <div>
-            <div className="flex items-center gap-2">
-              <span className="text-[10px] uppercase font-bold tracking-wider px-2.5 py-0.5 rounded-full bg-[#0286cd]/10 text-[#0286cd]">
-                {isAdminMode ? 'System Admin Action' : 'Company Registration Wizard'}
-              </span>
-              <span className="text-[10px] text-slate-400">Step {step} of {isAdminMode ? 5 : 4}</span>
-            </div>
-            <h3 className="text-xl font-black text-slate-900 mt-1 flex items-center gap-2">
-              <Building className="w-5 h-5 text-[#0286cd]" />
-              {isAdminMode ? 'Register Company & Issue Credentials' : 'Register SA Emergency Cleaning Membership'}
-            </h3>
-          </div>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-700 cursor-pointer p-1 rounded-lg hover:bg-slate-100">
-            <X className="w-6 h-6" />
-          </button>
-        </div>
+  const steps = [
+    { n: 1, label: 'Company & site' },
+    { n: 2, label: 'Terms & conditions' },
+    { n: 3, label: 'Membership plan' },
+    { n: 4, label: 'Payment' },
+    ...(isAdminMode ? [{ n: 5, label: 'Login details' }] : [])
+  ];
 
-        {/* Progress Bar Indicator */}
-        <div className="w-full bg-slate-100 h-2 rounded-full overflow-hidden border border-slate-200">
-          <div 
-            className="bg-[#0286cd] h-full transition-all duration-300"
-            style={{ width: `${(step / (isAdminMode ? 5 : 4)) * 100}%` }}
-          ></div>
+  return (
+    <div className="grid gap-6 lg:grid-cols-[240px_minmax(0,1fr)]">
+      {/* Desktop: vertical step list. Tablet / phone: compact stepper above the form */}
+      <aside className="hidden lg:block">
+        <ol className="sticky top-4 space-y-1 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
+          {steps.map(s => (
+            <li key={s.n} className={`flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm font-semibold ${step === s.n ? 'bg-sky-50 text-brand-dark ring-1 ring-sky-200' : step > s.n ? 'text-emerald-700' : 'text-slate-400'}`}>
+              <span className={`flex h-7 w-7 shrink-0 items-center justify-center rounded-full text-xs font-bold ${step === s.n ? 'bg-brand text-white' : step > s.n ? 'bg-emerald-500 text-white' : 'bg-slate-100 text-slate-500'}`}>{step > s.n ? '✓' : s.n}</span>
+              {s.label}
+            </li>
+          ))}
+          <li className="px-3 pt-3 text-[11px] text-slate-500">Service covers Adelaide, South Australia (postcodes 5000–5199).</li>
+        </ol>
+      </aside>
+      <div className="min-w-0 space-y-6 rounded-2xl border border-slate-200 bg-white p-5 text-sm text-slate-800 shadow-sm md:p-8">
+        <div className="lg:hidden">
+          <div className="mb-2 flex items-center justify-between text-xs font-semibold text-slate-500">
+            <span>Step {step} of {steps.length}</span><span className="text-brand-dark">{steps.find(s => s.n === step)?.label}</span>
+          </div>
+          <div className="flex gap-1">{steps.map(s => <span key={s.n} className={`h-1.5 flex-1 rounded-full ${s.n <= step ? 'bg-brand' : 'bg-slate-200'}`} />)}</div>
         </div>
+        <h2 className="hidden text-lg font-extrabold text-slate-900 lg:block">{steps.find(s => s.n === step)?.label}</h2>
 
         {submitError && (
           <div className="p-3 bg-red-50 border border-red-200 text-red-700 rounded-xl flex items-center gap-2 font-medium">
