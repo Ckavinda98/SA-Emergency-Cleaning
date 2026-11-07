@@ -3,7 +3,7 @@
 import React, { useMemo, useState } from 'react';
 import { Link, useNavigate, useParams } from 'react-router-dom';
 import { Wrench, Navigation, Phone, MapPin, CheckCircle2, Clock, Star, FileText, User, AlertTriangle, Save, Lock, ChevronRight, Truck, Sparkles, Flag, Check, ArrowRight } from 'lucide-react';
-import { useAppData } from '@/app/AppData.jsx';
+import { useAppData, isTechniciansJob } from '@/app/AppData.jsx';
 import { API_BASE } from '@/shared/config/env.js';
 import { Page, Card, Kpi, Button, Tabs, Badge, InfoRow, Field, Alert, EmptyState, StickyActions, inputCls, useToast, useBreakpoint, cx } from '@/shared/ui/index.jsx';
 import { StatusChip, MapEmbed, MediaStrip, isCompleted, formatDateTime, hasTech } from '@/shared/ui/jobs.jsx';
@@ -57,17 +57,14 @@ function StepBar({ status, compact = false }) {
   );
 }
 
+// Jobs for the technician on screen: yourself, or the technician an admin picked in the header
 function useMyJobs() {
-  const { jobs, currentUser } = useAppData();
-  return useMemo(() => jobs.filter(j => {
-    if (!hasTech(j)) return false;
-    if (currentUser?.role === 'technician' && currentUser?.name) return (j.technicianName || '').toLowerCase().includes(currentUser.name.toLowerCase());
-    return true; // admins viewing the technician workspace see every assigned job
-  }), [jobs, currentUser]);
+  const { jobs, activeTechnician } = useAppData();
+  return useMemo(() => (activeTechnician ? jobs.filter(j => isTechniciansJob(j, activeTechnician)) : []), [jobs, activeTechnician]);
 }
 
 function useStatusUpdate() {
-  const { upsertJob } = useAppData();
+  const { upsertJob, reloadTechnicians } = useAppData();
   const { notify } = useToast();
   return async (job, status) => {
     try {
@@ -77,6 +74,7 @@ function useStatusUpdate() {
       const data = await res.json();
       if (!res.ok) { notify(data.error || 'The status could not be updated.', 'danger'); return false; }
       upsertJob(data);
+      reloadTechnicians().catch(() => {});
       return true;
     } catch {
       notify('No connection. The status was not changed, please try again.', 'danger');
@@ -87,7 +85,8 @@ function useStatusUpdate() {
 
 export function TechJobsPage() {
   const mine = useMyJobs();
-  const { currentUser, technicians } = useAppData();
+  const { currentUser, activeTechnician: me } = useAppData();
+  const isAdmin = currentUser?.role === 'admin';
   const [tab, setTab] = useState('assigned');
   const [highlight, setHighlight] = useState(null);
   const { notify } = useToast();
@@ -101,17 +100,17 @@ export function TechJobsPage() {
   const ongoing = mine.filter(j => ONGOING.includes(j.status));
   const today = new Date().toDateString();
   const doneToday = mine.filter(j => isCompleted(j.status) && new Date(j.completedAt || j.updatedAt || 0).toDateString() === today);
-  const me = technicians.find(t => t.name === currentUser?.name);
   const list = tab === 'assigned' ? assigned : ongoing;
   const focus = ongoing[0] || assigned[0];
 
   return (
-    <Page fit title={`Hi ${(currentUser?.name || '').split(' ')[0] || 'there'}`} subtitle="Your dispatched and active emergency jobs">
+    <Page fit title={isAdmin ? (me ? `${me.name}'s jobs` : 'Technician view') : `Hi ${(currentUser?.name || '').split(' ')[0] || 'there'}`}
+      subtitle={isAdmin ? 'What this technician sees. Pick another technician at the top.' : 'Your dispatched and active emergency jobs'}>
       <div className="grid shrink-0 grid-cols-2 gap-3 lg:grid-cols-4">
         <Kpi label="Waiting for you" value={assigned.length} icon={Clock} tone={assigned.length ? 'danger' : 'slate'} />
         <Kpi label="Active" value={ongoing.length} icon={Wrench} tone="warning" />
         <Kpi label="Done today" value={doneToday.length} icon={CheckCircle2} tone="success" className="hidden lg:block" />
-        <Kpi label="Rating" value={`${me?.rating || 5.0} / 5`} icon={Star} tone="brand" className="hidden lg:block" />
+        <Kpi label="Rating" value={me?.rating != null ? `${me.rating} / 5` : '–'} icon={Star} tone="brand" className="hidden lg:block" />
       </div>
       <div className="mt-4 grid gap-4 lg:grid-cols-[1fr_1.2fr] fit:min-h-0 fit:flex-1 fit:grid-rows-[minmax(0,1fr)]">
         <Card title="Job queue" icon={Wrench} className="fit:min-h-0" bodyClassName="fit:flex-1 fit:overflow-y-auto"
@@ -302,6 +301,31 @@ export function TechHistoryPage() {
 }
 
 export function TechProfilePage() {
+  const { currentUser } = useAppData();
+  return currentUser?.role === 'admin' ? <TechProfileAdminView /> : <TechProfileForm />;
+}
+
+// An admin in the technician view sees the picked technician's record (edited on the Technicians page)
+function TechProfileAdminView() {
+  const { activeTechnician: t } = useAppData();
+  return (
+    <Page title="Profile" subtitle="The technician picked at the top of the screen" breadcrumb={[{ label: 'My jobs', to: '/tech/jobs' }, { label: 'Profile' }]} backTo={false} width="medium">
+      {!t ? <Card><EmptyState title="No technicians yet">Add one on the Technicians page.</EmptyState></Card> : (
+        <Card title={t.name} icon={User} actions={<Button size="sm" variant="secondary" to={`/admin/technicians/${t.id}`}>Edit on Technicians page</Button>}>
+          <dl className="grid gap-3 sm:grid-cols-2">
+            <InfoRow label="Mobile phone">{t.phone}</InfoRow>
+            <InfoRow label="Email (login)">{t.email}</InfoRow>
+            <InfoRow label="Rating">{t.rating} / 5</InfoRow>
+            <InfoRow label="Jobs completed">{t.completedJobs ?? 0}</InfoRow>
+            <InfoRow label="Last sign-in">{t.lastLoginAt ? formatDateTime(t.lastLoginAt) : 'Never'}</InfoRow>
+          </dl>
+        </Card>
+      )}
+    </Page>
+  );
+}
+
+function TechProfileForm() {
   const { currentUser, setCurrentUser } = useAppData();
   const { notify } = useToast();
   const [name, setName] = useState(currentUser?.name || '');

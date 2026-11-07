@@ -13,6 +13,7 @@ import redemptionRoutes from './modules/redemptions/redemptions.routes.js';
 import invoiceRoutes from './modules/invoices/invoices.routes.js';
 import analyticsRoutes from './modules/analytics/analytics.routes.js';
 import logRoutes from './modules/logs/logs.routes.js';
+import searchRoutes from './modules/search/search.routes.js';
 
 // Builds the Express app without starting it, so tests can use it directly
 export function createApp() {
@@ -30,7 +31,7 @@ export function createApp() {
   });
 
   for (const routes of [authRoutes, configRoutes, customerRoutes, reportRoutes, jobRoutes, technicianRoutes,
-    redemptionRoutes, invoiceRoutes, analyticsRoutes, logRoutes]) {
+    redemptionRoutes, invoiceRoutes, analyticsRoutes, logRoutes, searchRoutes]) {
     app.use('/api', routes);
   }
 

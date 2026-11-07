@@ -1,7 +1,7 @@
 import { prisma } from '../../db/prisma.js';
 import { badRequest, notFound } from '../../lib/httpError.js';
 import { recordAudit, changedFields } from '../../lib/audit.js';
-import { assertOrganizationAccess } from '../../lib/access.js';
+import { assertOrganizationAccess, jobScope } from '../../lib/access.js';
 import { hashPassword, generateTempPassword } from '../../lib/passwords.js';
 import { isAdelaideLocation, ADELAIDE_ERROR } from '../../../shared/location.js';
 
@@ -13,7 +13,12 @@ async function findOrganization(id) {
 
 // A customer only receives their own company
 export async function list(actor) {
-  const where = actor.role === 'CUSTOMER' ? { id: actor.organizationId || '__none__' } : {};
+  let where = actor.role === 'CUSTOMER' ? { id: actor.organizationId || '__none__' } : {};
+  // A technician only needs the companies they have jobs for
+  if (actor.role === 'TECHNICIAN') {
+    const jobs = await prisma.emergencyRequest.findMany({ where: await jobScope(actor), select: { organizationId: true } });
+    where = { id: { in: [...new Set(jobs.map(j => j.organizationId))] } };
+  }
   return prisma.organization.findMany({ where, include: { locations: true }, orderBy: { createdAt: 'asc' } });
 }
 

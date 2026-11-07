@@ -81,7 +81,7 @@ export function DispatchPage() {
                   <li key={t.id} className="flex items-center gap-2">
                     <Avatar tech={t} />
                     <div className="min-w-0 flex-1"><div className="truncate text-sm font-semibold text-slate-900">{t.name}</div><div className="text-xs text-slate-500">{t.phone}</div></div>
-                    <Badge tone="success">Free</Badge>
+                    {t.waitingJobs ? <Badge tone="warning">{t.waitingJobs} waiting</Badge> : <Badge tone="success">Free</Badge>}
                   </li>
                 ))}
               </ul>

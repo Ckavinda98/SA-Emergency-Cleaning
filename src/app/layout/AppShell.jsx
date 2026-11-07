@@ -4,7 +4,8 @@
 //  Mobile (<768): no sidebar; ≡ opens it as a drawer; tab bar at the bottom.
 import React, { useEffect, useRef, useState } from 'react';
 import { NavLink, Outlet, useLocation, useNavigate, Link } from 'react-router-dom';
-import { Menu, LogOut, ChevronDown, User, Building2, X, Siren } from 'lucide-react';
+import { Menu, LogOut, ChevronDown, User, Building2, X, Siren, Search, Wrench } from 'lucide-react';
+import { GlobalSearch } from './GlobalSearch.jsx';
 import { useAppData } from '@/app/AppData.jsx';
 import { useBreakpoint, cx } from '@/shared/ui/index.jsx';
 import { NAV, ADMIN_VIEWS, MOBILE_TABS } from './nav.js';
@@ -43,6 +44,7 @@ export function AppShell() {
   return (
     <div className="flex h-dvh flex-col bg-surface text-slate-800">
       <Header onToggle={toggle} expanded={sidebarExpanded} />
+      <ViewPickerBar />
       <div className="relative flex min-h-0 flex-1">
         {bp === 'desktop' && !desktopHidden && (
           <aside className="flex w-[248px] shrink-0 flex-col overflow-y-auto border-r border-slate-200 bg-white" aria-label="Main navigation">
@@ -79,37 +81,77 @@ export function AppShell() {
   );
 }
 
+// Admins looking at the customer or technician view pick whose screens they see. Filled from the database.
+function useViewPicker() {
+  const { currentUser, customers, selectedCustomerId, activeCustomer, setSelectedCustomerId, technicians, activeTechnician, setSelectedTechnicianId } = useAppData();
+  const { pathname } = useLocation();
+  if (currentUser.role !== 'admin') return null;
+  if (pathname.startsWith('/app')) {
+    return { icon: Building2, label: 'Viewing customer', value: activeCustomer?.id || selectedCustomerId || '', onChange: setSelectedCustomerId,
+      options: customers.map(c => ({ value: c.id, label: c.businessName })), empty: 'No customers yet' };
+  }
+  if (pathname.startsWith('/tech')) {
+    return { icon: Wrench, label: 'Viewing technician', value: activeTechnician?.id || '', onChange: setSelectedTechnicianId,
+      options: technicians.map(t => ({ value: t.id, label: `${t.name}${t.status === 'ON_SITE' ? ' · on a job' : t.status === 'OFF_DUTY' ? ' · off duty' : ''}` })), empty: 'No technicians yet' };
+  }
+  return null;
+}
+
+function ViewPicker({ picker, className }) {
+  const Icon = picker.icon;
+  return (
+    <label className={cx('flex min-w-0 items-center gap-2 rounded-xl border border-sky-200 bg-sky-50 px-3 py-1.5', className)}>
+      <Icon className="h-4 w-4 shrink-0 text-brand" />
+      <span className="shrink-0 text-[11px] font-semibold text-slate-500">{picker.label}</span>
+      {picker.options.length === 0 ? <span className="text-xs font-bold text-slate-500">{picker.empty}</span> : (
+        <select value={picker.value} onChange={e => picker.onChange(e.target.value)} className="min-w-0 max-w-[240px] flex-1 truncate bg-transparent text-xs font-bold text-brand-dark focus:outline-none cursor-pointer">
+          {picker.options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
+        </select>
+      )}
+    </label>
+  );
+}
+
+// On phones and tablets the picker sits in a bar under the header
+export function ViewPickerBar() {
+  const picker = useViewPicker();
+  const bp = useBreakpoint();
+  if (!picker || bp === 'desktop') return null;
+  return <div className="shrink-0 border-b border-slate-200 bg-white px-3 py-2"><ViewPicker picker={picker} className="w-full" /></div>;
+}
+
 function Header({ onToggle, expanded }) {
-  const { currentUser, customers, selectedCustomerId, setSelectedCustomerId, logout } = useAppData();
-  const location = useLocation();
-  const showAccountPicker = currentUser.role === 'admin' && location.pathname.startsWith('/app');
+  const { currentUser, logout } = useAppData();
+  const picker = useViewPicker();
+  const bp = useBreakpoint();
+  const [mobileSearch, setMobileSearch] = useState(false);
   return (
     <header className="safe-top z-50 flex h-16 shrink-0 items-center gap-3 border-b border-slate-200 bg-white px-3 md:px-4">
       <button
         onClick={onToggle}
         aria-label={expanded ? 'Hide menu' : 'Show menu'}
         aria-expanded={expanded}
-        className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-50 cursor-pointer"
+        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-50 cursor-pointer"
       >
         <Menu className="h-5 w-5" />
       </button>
-      <Link to="/" className="flex min-w-0 items-center gap-2.5">
+      <Link to="/" className="flex min-w-0 shrink-0 items-center gap-2.5 md:shrink">
         <span className="flex h-10 items-center rounded-lg bg-[#e4e4e4] px-1.5"><img src="/logo.webp" alt="" className="h-7 w-auto" /></span>
-        <span className="min-w-0 leading-tight">
+        <span className="hidden min-w-0 leading-tight sm:block">
           <span className="block truncate text-sm font-extrabold text-slate-900 md:text-base">SA Emergency Cleaning</span>
           <span className="hidden truncate text-[11px] font-semibold text-brand sm:block">24/7 Response Desk</span>
         </span>
       </Link>
-      <div className="flex-1" />
-      {showAccountPicker && (
-        <label className="hidden items-center gap-2 rounded-xl border border-slate-200 bg-slate-50 px-3 py-1.5 lg:flex">
-          <Building2 className="h-4 w-4 text-brand" />
-          <span className="text-[11px] font-semibold text-slate-500">Viewing</span>
-          <select value={selectedCustomerId} onChange={e => setSelectedCustomerId(e.target.value)} className="max-w-[220px] bg-transparent text-xs font-bold text-brand-dark focus:outline-none cursor-pointer">
-            {customers.map(c => <option key={c.id} value={c.id}>{c.businessName}</option>)}
-          </select>
-        </label>
+      {bp === 'mobile' ? (
+        <>
+          <div className="flex-1" />
+          <button type="button" onClick={() => setMobileSearch(true)} aria-label="Search" className="flex h-10 w-10 items-center justify-center rounded-xl border border-slate-200 text-slate-700 hover:bg-slate-50 cursor-pointer"><Search className="h-5 w-5" /></button>
+          {mobileSearch && <GlobalSearch role={currentUser.role} mobile onClose={() => setMobileSearch(false)} />}
+        </>
+      ) : (
+        <div className="mx-auto w-full min-w-0 max-w-xl flex-1"><GlobalSearch role={currentUser.role} /></div>
       )}
+      {picker && bp === 'desktop' && <ViewPicker picker={picker} className="max-w-[380px]" />}
       <AvatarMenu user={currentUser} onLogout={logout} />
     </header>
   );

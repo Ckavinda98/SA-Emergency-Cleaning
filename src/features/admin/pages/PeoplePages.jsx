@@ -130,7 +130,7 @@ export function TechniciansPage() {
   const shown = technicians.filter(t => tab === 'all' || t.status === tab);
   const count = (s) => technicians.filter(t => t.status === s).length;
   return (
-    <Page title="Technicians" subtitle={`${technicians.length} field technicians`} actions={<Button to="/admin/technicians/new" icon={Plus}>Add technician</Button>}>
+    <Page title="Technicians" subtitle={`${technicians.length} field technicians · status worked out live from their jobs`} actions={<Button to="/admin/technicians/new" icon={Plus}>Add technician</Button>}>
       <Tabs value={tab} onChange={setTab} tabs={[
         { key: 'all', label: 'All', count: technicians.length }, { key: 'AVAILABLE', label: 'Available', count: count('AVAILABLE') },
         { key: 'ON_SITE', label: 'On a job', count: count('ON_SITE') }, { key: 'OFF_DUTY', label: 'Off duty', count: count('OFF_DUTY') }
@@ -148,7 +148,15 @@ export function TechniciansPage() {
                   <span className="flex items-center gap-1"><Phone className="h-3.5 w-3.5" />{t.phone}</span>
                   <span className="flex items-center gap-1"><Star className="h-3.5 w-3.5 text-amber-500" />{t.rating || 5.0}</span>
                 </div>
-                <div className="flex items-center justify-between"><TechStatusBadge status={t.status} /><span className="inline-flex items-center gap-1 text-xs font-semibold text-brand"><Edit3 className="h-3 w-3" />Edit</span></div>
+                <dl className="grid grid-cols-3 gap-2 rounded-xl bg-slate-50 p-2 text-center">
+                  <div><dt className="text-[10px] font-bold uppercase text-slate-400">Working</dt><dd className="text-sm font-bold text-slate-900">{t.workingJobs ?? 0}</dd></div>
+                  <div><dt className="text-[10px] font-bold uppercase text-slate-400">Waiting</dt><dd className="text-sm font-bold text-slate-900">{t.waitingJobs ?? 0}</dd></div>
+                  <div><dt className="text-[10px] font-bold uppercase text-slate-400">Done</dt><dd className="text-sm font-bold text-slate-900">{t.completedJobs ?? 0}</dd></div>
+                </dl>
+                <div className="flex items-center justify-between gap-2">
+                  <span className="flex min-w-0 items-center gap-2"><TechStatusBadge status={t.status} />{t.activeJobId && <span className="truncate font-mono text-[11px] font-bold text-brand">{t.activeJobId}</span>}</span>
+                  <span className="inline-flex shrink-0 items-center gap-1 text-xs font-semibold text-brand"><Edit3 className="h-3 w-3" />Edit</span>
+                </div>
               </Link>
             </li>
           ))}
@@ -160,13 +168,13 @@ export function TechniciansPage() {
 
 export function TechnicianFormPage() {
   const { techId } = useParams();
-  const { technicians, setTechnicians, jobs } = useAppData();
+  const { technicians, setTechnicians, reloadTechnicians, jobs } = useAppData();
   const { notify } = useToast();
   const navigate = useNavigate();
   const existing = techId ? technicians.find(t => t.id === techId) : null;
   const [form, setForm] = useState(() => ({
     name: existing?.name || '', phone: existing?.phone || '', email: existing?.email || '',
-    status: existing?.status || 'AVAILABLE', rating: existing?.rating || 5.0, avatar: existing?.avatar || ''
+    status: existing?.dutyStatus === 'OFF_DUTY' || existing?.status === 'OFF_DUTY' ? 'OFF_DUTY' : 'AVAILABLE', rating: existing?.rating || 5.0, avatar: existing?.avatar || ''
   }));
   const [error, setError] = useState('');
   const [saving, setSaving] = useState(false);
@@ -194,11 +202,11 @@ export function TechnicianFormPage() {
       if (!res.ok || !saved.id) { setError(saved.error || 'The technician could not be saved.'); setSaving(false); return; }
       const { tempPassword, ...tech } = saved;
       if (existing) {
-        setTechnicians(technicians.map(t => t.id === tech.id ? { ...t, ...tech } : t));
+        await reloadTechnicians();
         notify('Technician saved.');
         navigate('/admin/technicians');
       } else {
-        setTechnicians([...technicians, tech]);
+        await reloadTechnicians();
         setCreated({ name: tech.name, email: tech.email, tempPassword });
       }
     } catch { setError('Cannot reach the server. Nothing was saved.'); }
@@ -250,9 +258,9 @@ export function TechnicianFormPage() {
               <Field label="Full name" required><input className={inputCls} value={form.name} onChange={set('name')} placeholder="e.g. Jason Blake" /></Field>
               <Field label="Mobile phone" required><input type="tel" className={inputCls} value={form.phone} onChange={set('phone')} placeholder="0499 111 222" /></Field>
               {!existing && <Field label="Login email" hint="Leave blank to create one automatically"><input type="email" className={inputCls} value={form.email} onChange={set('email')} /></Field>}
-              <Field label="Status">
+              <Field label="Duty" hint="“On a job” is set automatically from the technician's jobs">
                 <select className={inputCls} value={form.status} onChange={set('status')}>
-                  <option value="AVAILABLE">Available</option><option value="ON_SITE">On a job</option><option value="OFF_DUTY">Off duty</option>
+                  <option value="AVAILABLE">On duty</option><option value="OFF_DUTY">Off duty</option>
                 </select>
               </Field>
               {existing && <Field label="Rating (1–5)"><input type="number" min="1" max="5" step="0.1" className={inputCls} value={form.rating} onChange={set('rating')} /></Field>}

@@ -3,9 +3,18 @@
 import React, { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { Preferences } from '@capacitor/preferences';
 import { API_BASE } from '@/shared/config/env.js';
-import { initialCustomerAccounts, initialDynamicConfig, initialTechniciansList } from '@/shared/constants/demoData.js';
 
 const AppDataContext = createContext(null);
+
+// Empty until /api/config answers. Every value shown in the app comes from the database.
+const EMPTY_CONFIG = { membershipPlans: [], redemptionRates: [], incidentCategories: [], additionalCalloutFee: 0, overageHourlyRate: 0, tenureMinMonths: 0, toiletOverflowDisclaimer: '' };
+
+// Jobs store the technician's name; older rows add a suffix ("Dave Miller (Tech ID #104)")
+export const isTechniciansJob = (job, tech) => {
+  if (!job?.technicianName || !tech?.name) return false;
+  const a = job.technicianName.toLowerCase(), b = tech.name.toLowerCase();
+  return a === b || a.startsWith(`${b} (`);
+};
 
 const readJson = (key) => {
   try { const v = localStorage.getItem(key); return v ? JSON.parse(v) : null; } catch { return null; }
@@ -13,13 +22,18 @@ const readJson = (key) => {
 
 export function AppDataProvider({ children }) {
   const [currentUser, setCurrentUser] = useState(() => readJson('sacc_current_user'));
-  const [config, setConfig] = useState(initialDynamicConfig);
-  const [customers, setCustomers] = useState(initialCustomerAccounts);
-  const [selectedCustomerId, setSelectedCustomerId] = useState(() => {
+  const [config, setConfig] = useState(EMPTY_CONFIG);
+  const [configLoaded, setConfigLoaded] = useState(false);
+  const [customers, setCustomers] = useState([]);
+  // Which customer / technician an admin is looking at in the customer and technician views (remembered per browser)
+  const [selectedCustomerId, setSelectedCustomerIdState] = useState(() => {
     const u = readJson('sacc_current_user');
-    return u?.businessId || u?.organizationId || 'cust-1';
+    return u?.businessId || u?.organizationId || readJson('sacc_view_customer') || null;
   });
-  const [technicians, setTechnicians] = useState(initialTechniciansList);
+  const [selectedTechnicianId, setSelectedTechnicianIdState] = useState(() => readJson('sacc_view_technician'));
+  const setSelectedCustomerId = useCallback((id) => { setSelectedCustomerIdState(id); try { localStorage.setItem('sacc_view_customer', JSON.stringify(id)); } catch { /* ignore */ } }, []);
+  const setSelectedTechnicianId = useCallback((id) => { setSelectedTechnicianIdState(id); try { localStorage.setItem('sacc_view_technician', JSON.stringify(id)); } catch { /* ignore */ } }, []);
+  const [technicians, setTechnicians] = useState([]);
   const [jobs, setJobs] = useState([]);
   const [dbStatus, setDbStatus] = useState('CONNECTING...');
   const [loaded, setLoaded] = useState(false);
@@ -44,13 +58,13 @@ export function AppDataProvider({ children }) {
 
       const configRes = await fetch(`${API_BASE}/config`);
       const configData = await configRes.json();
-      if (configData.membershipPlans) setConfig(configData);
+      if (configData.membershipPlans) { setConfig(configData); setConfigLoaded(true); }
 
       if (!currentUser) return;
 
       const [custRes, jobsRes] = await Promise.all([fetch(`${API_BASE}/customers`), fetch(`${API_BASE}/jobs`)]);
       const custData = await custRes.json();
-      if (custRes.ok && Array.isArray(custData) && custData.length > 0) setCustomers(custData);
+      if (custRes.ok && Array.isArray(custData)) setCustomers(custData);
       const jobsData = await jobsRes.json();
       if (jobsRes.ok && Array.isArray(jobsData)) setJobs(jobsData);
 
@@ -97,6 +111,8 @@ export function AppDataProvider({ children }) {
     } catch (e) { /* ignore */ }
     setCurrentUser(null);
     setJobs([]);
+    setCustomers([]);
+    setTechnicians([]);
   }, []);
 
   const upsertCustomer = useCallback((c) => {
@@ -112,13 +128,19 @@ export function AppDataProvider({ children }) {
 
   const activeCustomer = customers.find(c => c.id === selectedCustomerId) || customers[0];
   const activePlan = config.membershipPlans.find(p => p.id === activeCustomer?.membershipPlan) || config.membershipPlans[1];
+  // The technician whose jobs the technician view shows: yourself, or the one an admin picked
+  const activeTechnician = currentUser?.role === 'technician'
+    ? technicians.find(t => t.id === currentUser.technicianId || t.id === currentUser.techId) || technicians.find(t => t.name === currentUser.name)
+    : technicians.find(t => t.id === selectedTechnicianId) || technicians[0];
 
   const value = useMemo(() => ({
-    currentUser, setCurrentUser, config, setConfig, customers, setCustomers, upsertCustomer,
+    currentUser, setCurrentUser, config, setConfig, configLoaded, customers, setCustomers, upsertCustomer,
     selectedCustomerId, setSelectedCustomerId, activeCustomer, activePlan,
+    selectedTechnicianId, setSelectedTechnicianId, activeTechnician,
     technicians, setTechnicians, reloadTechnicians, jobs, setJobs, upsertJob,
     dbStatus, loaded, loadData, login, logout
-  }), [currentUser, config, customers, upsertCustomer, selectedCustomerId, activeCustomer, activePlan, technicians, reloadTechnicians, jobs, upsertJob, dbStatus, loaded, loadData, login, logout]);
+  }), [currentUser, config, configLoaded, customers, upsertCustomer, selectedCustomerId, setSelectedCustomerId, activeCustomer, activePlan,
+    selectedTechnicianId, setSelectedTechnicianId, activeTechnician, technicians, reloadTechnicians, jobs, upsertJob, dbStatus, loaded, loadData, login, logout]);
 
   return <AppDataContext.Provider value={value}>{children}</AppDataContext.Provider>;
 }

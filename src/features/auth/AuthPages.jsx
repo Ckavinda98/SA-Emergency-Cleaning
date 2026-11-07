@@ -95,7 +95,7 @@ export function LoginPage() {
 }
 
 export function RegisterPage() {
-  const { config, login } = useAppData();
+  const { config, configLoaded, login } = useAppData();
   const navigate = useNavigate();
   const { notify } = useToast();
 
@@ -119,7 +119,8 @@ export function RegisterPage() {
         <Button to="/login" variant="ghost" size="sm">Already a member? Sign in</Button>
       </header>
       <Page title="Register your business" subtitle="Four short steps. Coverage is Adelaide, South Australia only." width="medium">
-        <CompanyRegistrationWizard config={config} onClose={() => navigate('/login')} onRegisterSuccess={onSuccess} />
+        {configLoaded ? <CompanyRegistrationWizard config={config} onClose={() => navigate('/login')} onRegisterSuccess={onSuccess} />
+          : <p className="rounded-2xl border border-slate-200 bg-white p-6 text-sm text-slate-500" role="status">Loading plans from the server…</p>}
       </Page>
     </div>
   );

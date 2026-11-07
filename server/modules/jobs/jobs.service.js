@@ -1,7 +1,7 @@
 import { prisma } from '../../db/prisma.js';
 import { badRequest, forbidden, notFound } from '../../lib/httpError.js';
 import { recordAudit, changedFields } from '../../lib/audit.js';
-import { assertOrganizationAccess, organizationScope, isJobAssignedToTechnician } from '../../lib/access.js';
+import { assertOrganizationAccess, organizationScope, isJobAssignedToTechnician, jobScope } from '../../lib/access.js';
 import { parseJob } from '../../lib/jobs.js';
 import { allowedCallouts } from '../../../shared/config.js';
 import { FINISHED_STATUSES, canTechnicianMove } from '../../../shared/jobStatus.js';
@@ -19,7 +19,7 @@ async function findJob(id, include) {
 }
 
 export async function list(actor) {
-  const jobs = await prisma.emergencyRequest.findMany({ where: organizationScope(actor), orderBy: { submittedAt: 'desc' } });
+  const jobs = await prisma.emergencyRequest.findMany({ where: await jobScope(actor), orderBy: { submittedAt: 'desc' } });
   return jobs.map(parseJob);
 }
 
@@ -155,7 +155,8 @@ async function syncTechnicians(tx, job, updated, newStatus, technicianName) {
           await tx.technician.update({ where: { id: tech.id }, data: { status: 'AVAILABLE', activeJobId: null } });
         }
       } else {
-        await tx.technician.update({ where: { id: tech.id }, data: { status: 'ON_SITE', activeJobId: job.jobNumber } });
+        // Keep a technician who is marked off duty off duty; "on a job" is worked out from jobs when listing
+        await tx.technician.update({ where: { id: tech.id }, data: { ...(tech.status === 'OFF_DUTY' ? {} : { status: 'ON_SITE' }), activeJobId: job.jobNumber } });
       }
     }
   }

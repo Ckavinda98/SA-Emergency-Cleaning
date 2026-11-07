@@ -1,9 +1,9 @@
 import { prisma } from '../../db/prisma.js';
 import { badRequest, forbidden, notFound } from '../../lib/httpError.js';
 import { recordAudit, changedFields } from '../../lib/audit.js';
-import { isOwnTechnician } from '../../lib/access.js';
+import { isOwnTechnician, technicianNameMatches } from '../../lib/access.js';
 import { hashPassword, generateTempPassword, randomDigits } from '../../lib/passwords.js';
-import { FINISHED_STATUSES, TECHNICIAN_STATES } from '../../../shared/jobStatus.js';
+import { FINISHED_STATUSES, COMPLETED_STATUSES, TECHNICIAN_STATES } from '../../../shared/jobStatus.js';
 
 async function findTechnician(id) {
   const tech = await prisma.technician.findUnique({ where: { id } });
@@ -17,12 +17,41 @@ const renameOnOpenJobs = (tx, oldName, newName) => tx.emergencyRequest.updateMan
   data: { technicianName: newName }
 });
 
+// Statuses where the technician is out working on the job
+const WORKING_STATUSES = ['ACCEPTED', 'TRAVELLING', 'ARRIVED', 'IN_PROGRESS'];
+
+// The roster with each technician's status worked out from their jobs in the database, so it can't drift.
+// OFF_DUTY is the only status set by hand; otherwise a technician with a job under way is ON_SITE.
 export async function list() {
-  const technicians = await prisma.technician.findMany({
-    include: { user: { select: { email: true } } },
-    orderBy: { createdAt: 'asc' }
+  const [technicians, jobs] = await Promise.all([
+    prisma.technician.findMany({ include: { user: { select: { email: true, lastLoginAt: true } } }, orderBy: { createdAt: 'asc' } }),
+    prisma.emergencyRequest.findMany({
+      where: { technicianName: { not: null } },
+      select: { id: true, jobNumber: true, status: true, technicianName: true, completedAt: true, submittedAt: true },
+      orderBy: { submittedAt: 'desc' }
+    })
+  ]);
+  const today = new Date().toDateString();
+  return technicians.map(({ user, ...t }) => {
+    const mine = jobs.filter(j => technicianNameMatches(j.technicianName, t.name));
+    const open = mine.filter(j => !FINISHED_STATUSES.includes(j.status));
+    const working = open.filter(j => WORKING_STATUSES.includes(j.status));
+    const done = mine.filter(j => COMPLETED_STATUSES.includes(j.status));
+    const status = t.status === 'OFF_DUTY' ? 'OFF_DUTY' : working.length ? 'ON_SITE' : 'AVAILABLE';
+    return {
+      ...t,
+      dutyStatus: t.status,
+      status,
+      activeJobId: (working[0] || open[0])?.jobNumber || null,
+      activeJobRef: (working[0] || open[0])?.id || null,
+      workingJobs: working.length,
+      waitingJobs: open.length - working.length,
+      completedJobs: done.length,
+      completedToday: done.filter(j => new Date(j.completedAt || j.submittedAt).toDateString() === today).length,
+      email: user?.email || null,
+      lastLoginAt: user?.lastLoginAt || null
+    };
   });
-  return technicians.map(({ user, ...t }) => ({ ...t, email: user?.email || null }));
 }
 
 // Create technician + login. A random temporary password is returned once for the admin to pass on.

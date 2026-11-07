@@ -20,8 +20,26 @@ export const isOwnTechnician = (actor, techId) => actor.role === 'ADMIN' || acto
 export async function isJobAssignedToTechnician(actor, job) {
   if (!actor.technicianId) return false;
   const tech = await prisma.technician.findUnique({ where: { id: actor.technicianId } });
-  if (!tech || !job.technicianName) return false;
-  // Older jobs store the name with a suffix, e.g. "Dave Miller (Tech ID #104)".
-  const assigned = job.technicianName.toLowerCase(), name = tech.name.toLowerCase();
-  return assigned === name || assigned.startsWith(`${name} (`);
+  return Boolean(tech && technicianNameMatches(job.technicianName, tech.name));
+}
+
+// Jobs store the technician's name. Older rows add a suffix ("Dave Miller (Tech ID #104)"), so match both.
+export const jobsForTechnicianName = (name) => ({
+  OR: [{ technicianName: name }, { technicianName: { startsWith: `${name} (` } }]
+});
+
+export const technicianNameMatches = (jobTechName, name) => {
+  if (!jobTechName || !name) return false;
+  const a = jobTechName.toLowerCase(), b = name.toLowerCase();
+  return a === b || a.startsWith(`${b} (`);
+};
+
+// Where-clause for jobs this actor may list: customers see their company, technicians their own jobs
+export async function jobScope(actor) {
+  if (actor.role === 'CUSTOMER') return organizationScope(actor);
+  if (actor.role === 'TECHNICIAN') {
+    const tech = actor.technicianId && await prisma.technician.findUnique({ where: { id: actor.technicianId } });
+    return tech ? jobsForTechnicianName(tech.name) : { id: '__none__' };
+  }
+  return {};
 }
