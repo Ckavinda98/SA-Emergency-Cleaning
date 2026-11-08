@@ -26,7 +26,8 @@ export const PUBLIC_ROUTES = [
   ['GET', /^\/api\/health$/],
   ['GET', /^\/api\/config$/],
   ['POST', /^\/api\/auth\/(register|login|refresh)$/],
-  ['GET', /^\/api\/jobs\/[^/]+\/pdf-report$/]
+  ['GET', /^\/api\/jobs\/[^/]+\/pdf-report$/],
+  ['GET', /^\/api\/jobs\/[^/]+\/report\.pdf$/]
 ];
 
 export const authGate = (req, res, next) => {

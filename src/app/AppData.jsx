@@ -83,6 +83,22 @@ export function AppDataProvider({ children }) {
 
   useEffect(() => { loadData(); }, [loadData]);
 
+  // Quiet refresh so sidebar alerts and live dots stay current without reloading the page
+  useEffect(() => {
+    if (!currentUser) return undefined;
+    const refresh = async () => {
+      if (document.hidden) return;
+      try {
+        const [jr, cr] = await Promise.all([fetch(`${API_BASE}/jobs`), fetch(`${API_BASE}/customers`)]);
+        const [jd, cd] = await Promise.all([jr.json(), cr.json()]);
+        if (jr.ok && Array.isArray(jd)) setJobs(jd);
+        if (cr.ok && Array.isArray(cd)) setCustomers(cd);
+      } catch { /* offline: keep what is on screen */ }
+    };
+    const id = setInterval(refresh, 30000);
+    return () => clearInterval(id);
+  }, [currentUser?.id]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // Keep the in-progress timer moving on technician screens
   useEffect(() => {
     const interval = setInterval(() => {

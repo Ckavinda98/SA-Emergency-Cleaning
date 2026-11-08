@@ -11,6 +11,7 @@ import { useBreakpoint, cx } from '@/shared/ui/index.jsx';
 import { NAV, ADMIN_VIEWS, MOBILE_TABS } from './nav.js';
 import { tabForPath } from '@shared/roles.js';
 import { COMPANY } from '@shared/membership.js';
+import { useNavBadges, NavBadge, NavCornerBadge } from './navBadges.jsx';
 
 const SIDEBAR_KEY = 'sacc_sidebar_hidden';
 
@@ -257,6 +258,9 @@ function SidebarContent({ role, onLogout }) {
   const items = NAV[role] || [];
   const views = isAdmin ? [{ to: '/admin/dispatch', label: 'Admin desk', icon: ADMIN_VIEWS[0].icon }, ...ADMIN_VIEWS].filter(v => !(role === 'admin' && v.to === '/admin/dispatch')) : [];
   const current = activeTo([...items, ...views], pathname);
+  const { badges, markSeen } = useNavBadges(role);
+  // Looking at the page counts as seeing what is new on it
+  useEffect(() => { if (current && badges[current]?.fresh) markSeen(current); }, [current, badges, markSeen]);
   return (
     <div className="flex flex-1 flex-col gap-1 p-3">
       <ProfileTag to={id.profilePath || undefined} title={id.profilePath ? 'Open your profile' : undefined}
@@ -275,8 +279,8 @@ function SidebarContent({ role, onLogout }) {
       )}
       <nav className="flex flex-col gap-1">
         {items.map(it => (
-          <NavLink key={it.to} to={it.to} className={itemCls(current === it.to)} aria-current={current === it.to ? 'page' : undefined}>
-            <it.icon className="h-[18px] w-[18px] shrink-0" />{it.label}
+          <NavLink key={it.to} to={it.to} className={itemCls(current === it.to)} aria-current={current === it.to ? 'page' : undefined} onClick={() => markSeen(it.to)}>
+            <it.icon className="h-[18px] w-[18px] shrink-0" /><span className="truncate">{it.label}</span><NavBadge badge={badges[it.to]} />
           </NavLink>
         ))}
       </nav>
@@ -305,6 +309,7 @@ function Rail({ role }) {
   const items = NAV[role] || [];
   const { pathname } = useLocation();
   const current = activeTo(items, pathname);
+  const { badges, markSeen } = useNavBadges(role);
   return (
     <nav className="flex flex-col items-center gap-1 py-3">
       {role === 'customer' && (
@@ -313,10 +318,10 @@ function Rail({ role }) {
         </NavLink>
       )}
       {items.map(it => (
-        <NavLink key={it.to} to={it.to} title={it.label} aria-label={it.label}
-          className={cx('flex h-11 w-11 items-center justify-center rounded-xl transition-colors',
+        <NavLink key={it.to} to={it.to} title={it.label} aria-label={it.label} onClick={() => markSeen(it.to)}
+          className={cx('relative flex h-11 w-11 items-center justify-center rounded-xl transition-colors',
             current === it.to ? 'bg-sky-50 text-brand-dark ring-1 ring-sky-200' : 'text-slate-500 hover:bg-slate-50 hover:text-slate-900')}>
-          <it.icon className="h-5 w-5" />
+          <it.icon className="h-5 w-5" /><NavCornerBadge badge={badges[it.to]} />
         </NavLink>
       ))}
     </nav>
@@ -327,6 +332,7 @@ function BottomTabs({ role, onMore }) {
   const tabs = MOBILE_TABS[role] || [];
   const { pathname } = useLocation();
   const current = activeTo(tabs, pathname);
+  const { badges, markSeen } = useNavBadges(role);
   if (!tabs.length) return null;
   return (
     <nav className="safe-bottom fixed inset-x-0 bottom-0 z-40 flex items-stretch justify-around border-t border-slate-200 bg-white" aria-label="Main">
@@ -340,8 +346,8 @@ function BottomTabs({ role, onMore }) {
           {t.label}
         </NavLink>
       ) : (
-        <NavLink key={t.to} to={t.to} className={cx('flex flex-1 flex-col items-center justify-center gap-0.5 py-2 text-[10px] font-semibold', current === t.to ? 'text-brand' : 'text-slate-500')}>
-          <t.icon className="h-5 w-5" />{t.label}
+        <NavLink key={t.to} to={t.to} onClick={() => markSeen(t.to)} className={cx('flex flex-1 flex-col items-center justify-center gap-0.5 py-2 text-[10px] font-semibold', current === t.to ? 'text-brand' : 'text-slate-500')}>
+          <span className="relative"><t.icon className="h-5 w-5" /><NavCornerBadge badge={badges[t.to]} /></span>{t.label}
         </NavLink>
       ))}
     </nav>

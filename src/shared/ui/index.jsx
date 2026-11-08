@@ -14,7 +14,7 @@ export const cx = (...parts) => parts.filter(Boolean).join(' ');
 // A page opened from a list gets a back arrow to that list. By default it points at the
 // nearest breadcrumb link above the current page; pass backTo to override, or backTo={false} to hide it.
 export function Page({ title, subtitle, breadcrumb, actions, children, fit = false, width = 'full', className, backTo }) {
-  const max = width === 'narrow' ? 'max-w-3xl' : width === 'medium' ? 'max-w-5xl' : 'max-w-[1600px]';
+  const max = width === 'narrow' ? 'max-w-3xl' : width === 'medium' ? 'max-w-5xl' : width === 'screen' ? 'max-w-none' : 'max-w-[1600px]';
   const parent = backTo === false ? null
     : backTo ? { to: backTo, label: 'Back' }
     : [...(breadcrumb || [])].slice(0, -1).reverse().find(b => b.to);

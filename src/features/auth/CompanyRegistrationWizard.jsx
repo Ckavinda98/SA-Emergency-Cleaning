@@ -199,7 +199,7 @@ export function CompanyRegistrationWizard({ onClose, onRegisterSuccess, isAdminM
   ];
 
   return (
-    <div className="grid gap-6 lg:grid-cols-[240px_minmax(0,1fr)]">
+    <div className="grid gap-6 lg:grid-cols-[240px_minmax(0,1fr)] xl:grid-cols-[280px_minmax(0,1fr)] xl:gap-8">
       {/* Desktop: vertical step list. Tablet / phone: compact stepper above the form */}
       <aside className="hidden lg:block">
         <ol className="sticky top-4 space-y-1 rounded-2xl border border-slate-200 bg-white p-3 shadow-sm">
@@ -212,7 +212,7 @@ export function CompanyRegistrationWizard({ onClose, onRegisterSuccess, isAdminM
           <li className="px-3 pt-3 text-[11px] text-slate-500">Covers the Adelaide metro area. Other South Australian sites can be accepted with a travel charge. 24/7 hotline {COMPANY.hotline}.</li>
         </ol>
       </aside>
-      <div className="min-w-0 space-y-6 rounded-2xl border border-slate-200 bg-white p-5 text-sm text-slate-800 shadow-sm md:p-8">
+      <div className="min-w-0 space-y-6 rounded-2xl border border-slate-200 bg-white p-5 text-sm text-slate-800 shadow-sm md:p-8 xl:space-y-4 xl:px-8 xl:py-6">
         <div className="lg:hidden">
           <div className="mb-2 flex items-center justify-between text-xs font-semibold text-slate-500">
             <span>Step {step} of {steps.length}</span><span className="text-brand-dark">{steps.find(s => s.n === step)?.label}</span>
@@ -236,16 +236,13 @@ export function CompanyRegistrationWizard({ onClose, onRegisterSuccess, isAdminM
               <span>Membership covers commercial sites in the <strong>Adelaide metro area</strong>. Sites elsewhere in South Australia can be accepted at SACC's discretion, with travel at {money(config?.travelRatePerKm ?? 1.5)}/km each way.</span>
             </div>
 
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-              <Field label="Company / business name" required error={errors.businessName}>
+            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+              <Field label="Company / business name" required error={errors.businessName} className="xl:col-span-2">
                 <input className={inputCls} value={businessName} onChange={e => edit(setBusinessName, 'businessName')(e.target.value)} placeholder="e.g. Adelaide Innovation Tech Hub Pty Ltd" autoComplete="organization" />
               </Field>
               <Field label="Australian Business Number (ABN)" required error={errors.abn} hint="11 digits">
                 <input className={inputCls} value={abn} inputMode="numeric" maxLength={14} onChange={e => edit(setAbn, 'abn')(e.target.value.replace(/[^\d\s]/g, ''))} placeholder="48 123 456 789" />
               </Field>
-            </div>
-
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-3">
               <Field label="Primary contact name" required error={errors.primaryContactName}>
                 <input className={inputCls} value={primaryContactName} onChange={e => edit(setPrimaryContactName, 'primaryContactName')(e.target.value)} placeholder="Sarah Jenkins" autoComplete="name" />
               </Field>
@@ -273,7 +270,7 @@ export function CompanyRegistrationWizard({ onClose, onRegisterSuccess, isAdminM
                 <MapPin className="h-4 w-4 text-[#0286cd]" />
                 Primary site location
               </h4>
-              <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
+              <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
                 <Field label="Site / facility name" error={errors.locationName}>
                   <input className={inputCls} value={locationName} onChange={e => edit(setLocationName, 'locationName')(e.target.value)} placeholder="Adelaide Headquarters" />
                 </Field>
@@ -284,25 +281,26 @@ export function CompanyRegistrationWizard({ onClose, onRegisterSuccess, isAdminM
                     ))}
                   </select>
                 </Field>
+                <Field as="div" label="Street address" required error={errors.streetAddress || locationError} className="md:col-span-2"
+                  hint="Start typing and pick your address from the list">
+                  <AddressAutocomplete value={streetAddress} onChange={edit(setStreetAddress, 'streetAddress')} onSelect={onAddressPicked}
+                    placeholder="e.g. 120 Grenfell Street" aria-invalid={Boolean(errors.streetAddress)} className={errors.streetAddress ? '!border-red-400 !bg-red-50/40' : ''} />
+                </Field>
               </div>
-              <Field as="div" label="Street address" required error={errors.streetAddress || locationError} className="mt-3"
-                hint="Start typing and pick your address from the list">
-                <AddressAutocomplete value={streetAddress} onChange={edit(setStreetAddress, 'streetAddress')} onSelect={onAddressPicked}
-                  placeholder="e.g. 120 Grenfell Street" aria-invalid={Boolean(errors.streetAddress)} className={errors.streetAddress ? '!border-red-400 !bg-red-50/40' : ''} />
-              </Field>
               {streetAddress.trim().length > 3 && area === 'OUTSIDE_METRO' && (
                 <div className="mt-3 rounded-xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900">
                   This site is outside the Adelaide metro area. SACC will confirm whether it can accept it. Visits there have a travel charge of {money(config?.travelRatePerKm ?? 1.5)}/km each way from the Adelaide GPO, and the 2–4 hour response target does not apply.
                 </div>
               )}
-              {!isAdminMode && (
-                <Field label="Referral code (optional)" className="mt-3 max-w-xs" hint="From a business that referred you">
-                  <input className={inputCls} value={referralCode} onChange={e => setReferralCode(e.target.value.toUpperCase())} placeholder="REF-XXXXXX" />
-                </Field>
-              )}
             </div>
 
-            <div className="pt-4 flex justify-end gap-3">
+            <div className="flex flex-wrap items-end justify-between gap-3 border-t border-slate-200 pt-4">
+              {!isAdminMode ? (
+                <Field label="Referral code (optional)" className="w-full max-w-xs" hint="From a business that referred you">
+                  <input className={inputCls} value={referralCode} onChange={e => setReferralCode(e.target.value.toUpperCase())} placeholder="REF-XXXXXX" />
+                </Field>
+              ) : <span />}
+              <div className="ml-auto flex gap-3 sm:mb-5">
               <button
                 type="button"
                 title="Leave registration without saving"
@@ -319,6 +317,7 @@ export function CompanyRegistrationWizard({ onClose, onRegisterSuccess, isAdminM
                 <span>Continue to Terms & Conditions</span>
                 <ChevronRight className="w-4 h-4" />
               </button>
+            </div>
             </div>
           </form>
         )}

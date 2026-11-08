@@ -4,6 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import { ChevronRight, MapPin, User } from 'lucide-react';
 import { EmptyState } from '@/shared/ui/index.jsx';
 import { StatusChip, formatDateTime, hasTech } from '@/shared/ui/jobs.jsx';
+import { ReportPdfButton } from '@/reports/ReportPdfButton.jsx';
 
 export function JobList({ jobs, linkTo, showCustomer = false, emptyTitle = 'No requests yet', emptyText, emptyAction, compact = false }) {
   const navigate = useNavigate();
@@ -34,7 +35,7 @@ export function JobList({ jobs, linkTo, showCustomer = false, emptyTitle = 'No r
               <td className="py-3 pr-3 align-top"><StatusChip status={job.status} /></td>
               {!compact && <td className="hidden py-3 pr-3 align-top text-xs font-medium text-slate-700 lg:table-cell">{hasTech(job) ? job.technicianName : <span className="text-slate-400">Not assigned</span>}</td>}
               {!compact && <td className="hidden py-3 pr-3 align-top text-xs text-slate-500 xl:table-cell whitespace-nowrap">{formatDateTime(job.submittedAt || job.createdAt)}</td>}
-              <td className="py-3 align-top"><ChevronRight className="h-4 w-4 text-slate-300" /></td>
+              <td className="py-2 align-top"><span className="flex items-center justify-end gap-1"><ReportPdfButton job={job} iconOnly /><ChevronRight className="h-4 w-4 text-slate-300" /></span></td>
             </tr>
           ))}
         </tbody>
@@ -45,7 +46,7 @@ export function JobList({ jobs, linkTo, showCustomer = false, emptyTitle = 'No r
             <button title="Open this request" onClick={() => navigate(linkTo(job))} className="w-full rounded-xl border border-slate-200 bg-white p-3 text-left shadow-sm active:bg-slate-50 cursor-pointer">
               <div className="flex items-center justify-between gap-2">
                 <span className="font-mono text-xs font-bold text-brand">{job.jobNumber || job.id.slice(0, 8)}</span>
-                <StatusChip status={job.status} />
+                <span className="flex items-center gap-1"><ReportPdfButton job={job} iconOnly /><StatusChip status={job.status} /></span>
               </div>
               <div className="mt-1 text-sm font-semibold text-slate-900">{showCustomer ? `${job.customerName} · ` : ''}{job.category}</div>
               <div className="mt-0.5 flex items-center gap-1 text-xs text-slate-500"><MapPin className="h-3 w-3 shrink-0" /><span className="truncate">{job.locationName || job.address}</span></div>

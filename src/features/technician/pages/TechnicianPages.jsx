@@ -11,6 +11,7 @@ import { phoneError, passwordError, confirmPasswordError, personNameError } from
 import { StatusChip, MapEmbed, MediaStrip, isCompleted, formatDateTime, targetText } from '@/shared/ui/jobs.jsx';
 import { onSiteMissing, HAZARDS, WATER_TYPES } from '@shared/membership.js';
 import { OnSiteRecord, MissedAccessForm, ReclassifyForm } from '../components/OnSiteRecord.jsx';
+import { ReportPdfButton } from '@/reports/ReportPdfButton.jsx';
 
 const AWAITING = ['NEW', 'SUBMITTED', 'TECH_ASSIGNED', 'TECHNICIAN_ASSIGNED'];
 const ONGOING = ['ACCEPTED', 'TRAVELLING', 'ARRIVED', 'IN_PROGRESS', 'CONVERTED_TO_QUOTE'];
@@ -232,6 +233,7 @@ export function TechJobDetailPage() {
       actions={<>
         <StatusChip status={job.status} />
         {job.reportIssuedAt && <Button title="Open the service report for this job" to={`/tech/jobs/${job.id}/report`} icon={FileText}>Service report {job.reportNumber}</Button>}
+        <ReportPdfButton job={job} />
       </>}>
       <div className="grid gap-4 lg:grid-cols-[1fr_1fr]">
         <div className="space-y-4">
@@ -247,7 +249,7 @@ export function TechJobDetailPage() {
               </div>
             )}
             {isCompleted(job.status) && (
-              <div className="mt-4 flex items-center gap-2 rounded-xl bg-emerald-50 p-3 text-sm font-semibold text-emerald-800"><CheckCircle2 className="h-5 w-5" />Job completed. Well done.</div>
+              <div className="mt-4 flex flex-wrap items-center gap-2 rounded-xl bg-emerald-50 p-3 text-sm font-semibold text-emerald-800"><CheckCircle2 className="h-5 w-5" /><span className="flex-1">Job completed. Well done.</span><ReportPdfButton job={job} size="sm" label="Download report PDF" /></div>
             )}
             {['ARRIVED', 'IN_PROGRESS'].includes(job.status) && (
               <div className="mt-3 flex flex-col gap-2">
@@ -326,6 +328,7 @@ export function TechHistoryPage() {
                     <div className="truncate text-xs text-slate-500">{j.jobNumber} · {j.address}</div>
                   </div>
                   <span className="hidden text-xs text-slate-500 sm:block">{formatDateTime(j.completedAt || j.updatedAt)}</span>
+                  <span onClick={e => e.preventDefault()}><ReportPdfButton job={j} iconOnly /></span>
                   <ChevronRight className="h-4 w-4 text-slate-300" />
                 </Link>
               </li>

@@ -9,6 +9,7 @@ import { jobCharges, HAZARDS, WATER_TYPES } from '../../../shared/membership.js'
 import { ratesFor } from '../../lib/membership.js';
 import { isJobAssignedToTechnician } from '../../lib/access.js';
 import { renderServiceReport } from './reportHtml.js';
+import { renderServiceReportPdf } from './reportPdf.js';
 
 const fmt = (d, withDate = false) => d
   ? new Date(d).toLocaleString('en-AU', { timeZone: 'Australia/Adelaide', ...(withDate ? { dateStyle: 'medium' } : {}), timeStyle: 'short' })
@@ -34,7 +35,8 @@ export function buildTimes(job) {
   return { arrivedAt, responseMinutes, responseNote };
 }
 
-export async function serviceReportHtml(token, jobId, download) {
+// Everything the report shows, for any signed-in viewer allowed to see the job
+async function loadReport(token, jobId) {
   const viewer = verifyViewer(token);
   const row = await prisma.emergencyRequest.findUnique({
     where: { id: jobId },
@@ -51,11 +53,8 @@ export async function serviceReportHtml(token, jobId, download) {
   const charges = job.chargesJson ? JSON.parse(job.chargesJson) : jobCharges(job, plan, config, rates);
   const finishedAt = job.completedAt || job.missedAccessAt || job.cancelledAt;
   return {
-    jobNumber: job.jobNumber || job.id,
-    html: renderServiceReport({
       job,
       org: row.organization,
-      download,
       fmt,
       config,
       planName: plan.name,
@@ -65,6 +64,17 @@ export async function serviceReportHtml(token, jobId, download) {
       hazardLabels: job.hazards.map(h => HAZARDS.find(x => x.id === h)?.label || h),
       issuedOnTime: Boolean(finishedAt && job.reportIssuedAt && new Date(job.reportIssuedAt) - new Date(finishedAt) <= (config.reportDueHours ?? 24) * 3600000),
       ...buildTimes(job)
-    })
   };
+}
+
+export async function serviceReportHtml(token, jobId, download) {
+  const r = await loadReport(token, jobId);
+  return { jobNumber: r.job.jobNumber || r.job.id, html: renderServiceReport({ ...r, download }) };
+}
+
+// The client's report template filled in, as a PDF file (any role that can see the job)
+export async function serviceReportPdf(token, jobId) {
+  const r = await loadReport(token, jobId);
+  const pdf = await renderServiceReportPdf(r);
+  return { fileName: `${r.job.reportNumber || r.job.jobNumber || r.job.id}-service-report.pdf`, pdf };
 }

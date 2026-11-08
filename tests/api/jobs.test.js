@@ -73,6 +73,20 @@ describe('emergency job lifecycle', () => {
     expect(res.text).not.toContain('SA Emergency Cleaning');
   });
 
+  it('downloads the client report template filled in as a PDF, for every role that can see the job', async () => {
+    expect((await request(app).get(`/api/jobs/${job.id}/report.pdf`)).status).toBe(401);
+    expect((await request(app).get(`/api/jobs/${job.id}/report.pdf?token=${s.mahima.accessToken}`)).status).toBe(403);
+    for (const who of ['ross', 'admin', 'config']) {
+      const res = await request(app).get(`/api/jobs/${job.id}/report.pdf?token=${s[who].accessToken}`).buffer(true).parse((r, cb) => {
+        const chunks = []; r.on('data', c => chunks.push(c)); r.on('end', () => cb(null, Buffer.concat(chunks)));
+      });
+      expect(res.status).toBe(200);
+      expect(res.headers['content-type']).toContain('application/pdf');
+      expect(res.headers['content-disposition']).toContain('attachment');
+      expect(res.body.subarray(0, 4).toString()).toBe('%PDF');
+    }
+  });
+
   it('writes the changes to AuditLog', async () => {
     const res = await api('get', `/audit-logs?entityType=EmergencyRequest&entityId=${job.id}`, s.admin.accessToken);
     const actions = res.body.map(l => l.action);

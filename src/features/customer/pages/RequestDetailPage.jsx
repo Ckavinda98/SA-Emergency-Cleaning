@@ -4,6 +4,7 @@ import { useParams } from 'react-router-dom';
 import { Edit3, FileText, Phone, MapPin, Maximize2, Minimize2, User, ShieldAlert, Camera, Receipt, XCircle, Wrench, AlertTriangle } from 'lucide-react';
 import { useAppData } from '@/app/AppData.jsx';
 import { useJobAction } from '@/app/useJobAction.js';
+import { ReportPdfButton } from '@/reports/ReportPdfButton.jsx';
 import { Page, Card, Button, Badge, InfoRow, EmptyState, Alert, InlineConfirm, Field, inputCls, cx } from '@/shared/ui/index.jsx';
 import { StatusChip, SlaTimeline, MapEmbed, MediaStrip, isLive, isNewJob, hasTech, formatDateTime, ChargesTable, TriageBadge, targetText } from '@/shared/ui/jobs.jsx';
 import { HotlineLink, fmtMoney } from '@/shared/ui/membership.jsx';
@@ -44,6 +45,7 @@ export function RequestDetailPage() {
           confirmLabel="Yes, cancel" onConfirm={() => act(job, 'cancel', {}, 'Request cancelled.')} />}
         {hasTech(job) && live && <Button title="Call the technician on their phone" href={`tel:${job.technicianPhone || job.onsitePhone || ''}`} variant="success" icon={Phone}>Call technician</Button>}
         {job.reportIssuedAt && <Button title="Open the service report for this job" to={`/app/requests/${job.id}/report`} icon={FileText}>Service report {job.reportNumber}</Button>}
+        <ReportPdfButton job={job} />
       </>}
     >
       {job.quoteStatus === 'PENDING' && (

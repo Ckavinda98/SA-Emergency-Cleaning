@@ -8,6 +8,7 @@ import { API_BASE } from '@/shared/config/env.js';
 import { Page, Card, Kpi, Button, Tabs, Badge, InfoRow, Field, EmptyState, inputCls, useToast, cx } from '@/shared/ui/index.jsx';
 import { StatusChip, SlaTimeline, MapEmbed, MediaStrip, isCompleted, isFinished, isLive, isNewJob, hasTech, formatDateTime, ChargesTable, TriageBadge, targetText } from '@/shared/ui/jobs.jsx';
 import { useJobAction } from '@/app/useJobAction.js';
+import { ReportPdfButton } from '@/reports/ReportPdfButton.jsx';
 import { fmtDate, fmtMoney } from '@/shared/ui/membership.jsx';
 import { TRIAGE, WATER_TYPES, HAZARDS, surchargeFor, insideServiceWindow, inWaitingPeriod } from '@shared/membership.js';
 
@@ -170,6 +171,7 @@ export function AdminJobPage() {
         {isLive(job.status) && <Button title="Follow the technician's location on the map" to={`/admin/map?job=${job.id}`} variant="secondary" icon={MapIcon}>Track live</Button>}
         {!job.acknowledgedAt && !isFinished(job.status) && <Button title="Acknowledge the request: starts the 2–4 hour response clock" variant="emergency" icon={ClipboardCheck} onClick={() => act(job, 'acknowledge', {}, 'Acknowledged. The response clock has started.')}>Acknowledge</Button>}
         {(isCompleted(job.status) || job.status === 'UNABLE_TO_ACCESS' || job.reportIssuedAt) && <Button title="Open the service report for this job" to={`/admin/jobs/${job.id}/report`} variant={job.reportIssuedAt ? 'primary' : 'secondary'} icon={FileText}>{job.reportIssuedAt ? `Report ${job.reportNumber}` : 'Report (draft)'}</Button>}
+        <ReportPdfButton job={job} />
         {!job.reportIssuedAt && ['COMPLETED', 'UNABLE_TO_ACCESS', 'CANCELLED', 'CLOSED'].includes(job.status) && <Button title="Give the report a number, lock the charges and invoice the extras (7-day terms)" icon={Receipt} onClick={() => act(job, 'report', {}, 'Report issued and extras invoiced.')}>Issue report</Button>}
       </>}>
       <TriagePanel job={job} act={act} config={config} />
