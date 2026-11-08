@@ -8,7 +8,8 @@ who completes the job and produces a service report.
 - **API:** Node.js + Express 5 (`server/`, one module per domain; start it with `node server.js`)
 - **Shared rules:** `shared/` (job statuses, roles, plans, address check, Zod request schemas), used by both
 - **Tests:** Vitest + Supertest (`tests/`, run with `npm test`)
-- **Database:** Prisma 6 ORM over SQLite (`prisma/dev.db`) for local development
+- **Database:** Prisma 6 ORM over PostgreSQL (Neon for development and the free demo, Azure Database for PostgreSQL in production)
+- **Hosting (free test):** Netlify + Render + Neon + Supabase Storage. Step by step: [`docs/hosting/00-START-HERE.md`](docs/hosting/00-START-HERE.md)
 - **Mobile:** Capacitor 7 Android project (`android/`)
 
 ---
@@ -21,7 +22,9 @@ who completes the job and produces a service report.
 | npm | 9 or newer | `npm -v` |
 | Android Studio | only for the mobile app | |
 
-No database server is needed. SQLite is a single file that Prisma creates for you.
+You need a PostgreSQL database. The easiest is a free Neon project: follow
+[`docs/hosting/01-database-neon.md`](docs/hosting/01-database-neon.md) once, then copy `.env.example` to `.env`
+and paste your connection strings into it. (Or run Postgres in Docker: see the same guide.)
 
 ---
 
@@ -41,11 +44,13 @@ npm install
 
 ### Step 2: Create the database tables
 
+Make sure `.env` exists with `DATABASE_URL` and `DIRECT_DATABASE_URL` (copy `.env.example`). Then:
+
 ```bash
 npx prisma db push
 ```
 
-This reads `prisma/schema.prisma`, creates or updates the tables in `prisma/dev.db`, and generates the
+This reads `prisma/schema.prisma`, creates or updates the tables in your PostgreSQL database, and generates the
 Prisma client. It keeps existing data. **Run it again every time `schema.prisma` changes.**
 
 ### Step 3: Load the demo data
@@ -146,7 +151,7 @@ This opens a browser table editor at <http://localhost:5555> where you can view 
 | :--- | :--- |
 | `npm run dev` | Start the web app with hot reload on port 3000 |
 | `node server.js` (or `npm run server`) | Start the API on port 5000 |
-| `npm test` | Run the API and shared-rules tests (uses its own `prisma/test.db`, so `dev.db` is not touched) |
+| `npm test` | Run the API and shared-rules tests (uses the separate `TEST_DATABASE_URL` database and wipes it each run, so your dev data is not touched) |
 | `npm run test:watch` | Re-run the tests on every save |
 | `npm run build` | Build the web app into `dist/` |
 | `npm run preview` | Serve the built `dist/` folder |
@@ -159,12 +164,10 @@ This opens a browser table editor at <http://localhost:5555> where you can view 
 
 ### Start again with a clean database
 
-Stop the API server, then:
+Stop the API server, then (this deletes everything in the database that `.env` points at):
 
 ```bash
-del prisma\dev.db          # Windows (macOS/Linux: rm prisma/dev.db)
-npx prisma db push
-node prisma/seed.js
+npm run db:reset           # prisma db push --force-reset, then node prisma/seed.js
 ```
 
 ---
@@ -177,6 +180,7 @@ node prisma/seed.js
 | JWT secrets | development defaults in `server/config/env.js` | `JWT_SECRET` and `JWT_REFRESH_SECRET` environment variables. **Always set these outside local development.** |
 | Web app port | `3000` | `vite.config.js` |
 | API address used by the web app | `http://localhost:5000/api` | `VITE_API_BASE` in a `.env.local` file (read by `src/shared/config/env.js`), then restart `npm run dev` |
+| Address suggestions (Google Places) | Off: address boxes are plain text | `VITE_GOOGLE_MAPS_API_KEY` in `.env.local` (a browser key with **Places API (New)** and **Maps JavaScript API** enabled, restricted to your site), then restart `npm run dev` |
 
 Setting an environment variable for one run:
 
@@ -242,7 +246,7 @@ SA-Emergency-Cleaning/
 ├── prisma/
 │   ├── schema.prisma          Database models
 │   ├── seed.js                Demo data
-│   └── dev.db                 Local SQLite database (created by db push)
+│   └── (no local file: the database is PostgreSQL, set in .env)
 ├── android/                   Capacitor Android project
 ├── public/                    Static files (logo)
 ├── docs/                      Project map, tech spec, development plan, history
