@@ -1,7 +1,9 @@
-// Prisma Schema - Local SQLite for Development (Translates 100% to Azure PostgreSQL)
+// Prisma Schema - PostgreSQL everywhere: your PC (Neon dev branch or Docker), the free demo (Neon)
+// and production (Azure Database for PostgreSQL). Only the connection strings change.
 datasource db {
-  provider = "sqlite"
-  url      = "file:./dev.db"
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")          // pooled connection string (Neon "-pooler" host)
+  directUrl = env("DIRECT_DATABASE_URL")   // direct connection string, used by prisma db push / migrate
 }
 
 generator client {
@@ -296,4 +298,22 @@ model PointsEntry {
   createdAt      DateTime     @default(now())
 
   @@index([organizationId, createdAt])
+}
+
+// One row per uploaded file (photo, video, avatar, report). The job rows keep only the file's URL
+// in photosJson / videosJson / beforePhotosJson / afterPhotosJson.
+model FileAttachment {
+  id             String   @id @default(uuid())
+  jobId          String?  // set when the request is saved (photos are uploaded before the job exists)
+  organizationId String?
+  kind           String   // PHOTO, VIDEO, AVATAR, REPORT
+  path           String   @unique // e.g. uploads/<orgId>/2026-11/<uuid>.jpg
+  url            String
+  size           Int
+  mimeType       String
+  uploadedBy     String?  // User.id
+  createdAt      DateTime @default(now())
+
+  @@index([jobId])
+  @@index([organizationId])
 }

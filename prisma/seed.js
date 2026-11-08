@@ -1,19 +1,23 @@
 import { PrismaClient } from '@prisma/client';
 import bcrypt from 'bcryptjs';
+import dotenv from 'dotenv';
 import { DEFAULT_CONFIG } from '../shared/config.js';
 
 const monthsAgo = (n) => { const d = new Date(); d.setMonth(d.getMonth() - n); return d; };
 const lockedRates = () => JSON.stringify(Object.fromEntries(DEFAULT_CONFIG.membershipPlans.map(p => [p.id, { labourRate: p.labourRate, additionalCalloutFee: DEFAULT_CONFIG.additionalCalloutFee, price: p.price }])));
 const nextYearFrom = (start) => { const d = new Date(start); while (d <= new Date()) d.setFullYear(d.getFullYear() + 1); return d; };
 
-// SACC_DB_URL lets the automated tests seed their own database (prisma/test.db)
+dotenv.config({ quiet: true }); // reads DATABASE_URL and SEED_PASSWORD from .env
+
+// SACC_DB_URL lets the automated tests seed their own database (TEST_DATABASE_URL)
 const prisma = process.env.SACC_DB_URL
   ? new PrismaClient({ datasources: { db: { url: process.env.SACC_DB_URL } } })
   : new PrismaClient();
 
 async function main() {
   console.log('Seeding SA Commercial Cleaning Database...');
-  const hashedPassword = await bcrypt.hash('Password123!', 10);
+  // Set SEED_PASSWORD in .env to give the demo users your own password before you share the link
+  const hashedPassword = await bcrypt.hash(process.env.SEED_PASSWORD || 'Password123!', 10);
 
   // 1. Seed Dynamic System Config
   // Plans, fees and rules from the client's Membership Agreement v1.0 (shared/config.js)

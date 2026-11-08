@@ -5,6 +5,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { AlertTriangle, Building, User, Camera, UploadCloud, X, Siren, Info, Save } from 'lucide-react';
 import { useAppData, useCustomerSummary } from '@/app/AppData.jsx';
 import { API_BASE } from '@/shared/config/env.js';
+import { uploadFile } from '@/shared/api/files.js';
 import { Page, Card, Button, Field, Alert, StickyActions, EmptyState, inputCls, useToast, cx, useFieldErrors } from '@/shared/ui/index.jsx';
 import { PhoneInput } from '@/shared/ui/inputs.jsx';
 import { phoneError, personNameError, numberError } from '@shared/validation.js';
@@ -71,11 +72,26 @@ function RequestForm({ job, account, config, summary, upsertJob, upsertCustomer 
     setParkingInstructions(l?.parkingNotes || '');
   };
 
-  const readFiles = (files, setter) => Array.from(files || []).forEach(file => {
-    const reader = new FileReader();
-    reader.onload = ev => setter(prev => [...prev, ev.target.result]);
-    reader.readAsDataURL(file);
-  });
+  // Each file is uploaded on its own (POST /api/files); the request keeps only the URL that comes back
+  const [uploading, setUploading] = useState(0);
+  const [uploadError, setUploadError] = useState('');
+  const readFiles = (input, setter, kind) => {
+    const files = Array.from(input.files || []);
+    input.value = '';
+    setUploadError('');
+    files.forEach(async (file) => {
+      setUploading(n => n + 1);
+      try {
+        const url = await uploadFile(file, kind, job?.id);
+        setter(prev => [...prev, url]);
+        clear('photos');
+      } catch (err) {
+        setUploadError(`${file.name}: ${err.message}`);
+      } finally {
+        setUploading(n => n - 1);
+      }
+    });
+  };
 
   const addLink = () => {
     const v = linkInput.trim();
@@ -227,11 +243,11 @@ function RequestForm({ job, account, config, summary, upsertJob, upsertCustomer 
             <div className="flex flex-wrap gap-2">
               <label className="inline-flex h-10 cursor-pointer items-center gap-2 rounded-xl bg-brand px-4 text-sm font-semibold text-white hover:bg-brand-hover">
                 <Camera className="h-4 w-4" /> Take or add photos
-                <input type="file" accept="image/*" capture="environment" multiple className="hidden" onChange={e => readFiles(e.target.files, setPhotos)} />
+                <input type="file" accept="image/*" capture="environment" multiple className="hidden" onChange={e => readFiles(e.target, setPhotos, 'photo')} />
               </label>
               <label className="inline-flex h-10 cursor-pointer items-center gap-2 rounded-xl border border-slate-300 bg-white px-4 text-sm font-semibold text-slate-700 hover:bg-slate-50">
                 <UploadCloud className="h-4 w-4" /> Add videos
-                <input type="file" accept="video/*" multiple className="hidden" onChange={e => readFiles(e.target.files, setVideos)} />
+                <input type="file" accept="video/*" multiple className="hidden" onChange={e => readFiles(e.target, setVideos, 'video')} />
               </label>
             </div>
             <div className="mt-3 flex gap-2">
@@ -260,12 +276,14 @@ function RequestForm({ job, account, config, summary, upsertJob, upsertCustomer 
                 I can't take a photo right now (SACC may call to ask for one)
               </label>
             )}
+            {uploading > 0 && <p className="mt-2 text-sm font-medium text-slate-600">Uploading {uploading} file{uploading > 1 ? 's' : ''}…</p>}
+            {uploadError && <p className="mt-2 text-sm font-medium text-red-600">{uploadError}</p>}
             {errors.photos && <p className="mt-2 text-sm font-medium text-red-600">{errors.photos}</p>}
           </Card>
 
           <StickyActions className="xl:hidden">
             <Button variant="ghost" onClick={() => navigate(-1)} title="Go back without sending">Cancel</Button>
-            <Button type="submit" variant={job ? 'primary' : 'emergency'} icon={job ? Save : Siren} disabled={saving} title={job ? 'Save the changes to this request' : 'Send the emergency request to our dispatch team'}>{saving ? 'Sending…' : job ? 'Save changes' : 'Send request'}</Button>
+            <Button type="submit" variant={job ? 'primary' : 'emergency'} icon={job ? Save : Siren} disabled={saving || uploading > 0} title={job ? 'Save the changes to this request' : 'Send the emergency request to our dispatch team'}>{uploading > 0 ? 'Uploading…' : saving ? 'Sending…' : job ? 'Save changes' : 'Send request'}</Button>
           </StickyActions>
         </div>
 
@@ -288,7 +306,7 @@ function RequestForm({ job, account, config, summary, upsertJob, upsertCustomer 
                 </div>
               </Card>
             )}
-            <Button type="submit" variant={job ? 'primary' : 'emergency'} size="lg" block icon={job ? Save : Siren} disabled={saving} title={job ? 'Save the changes to this request' : 'Send the emergency request to our dispatch team'}>{saving ? 'Sending…' : job ? 'Save changes' : 'Send emergency request'}</Button>
+            <Button type="submit" variant={job ? 'primary' : 'emergency'} size="lg" block icon={job ? Save : Siren} disabled={saving || uploading > 0} title={job ? 'Save the changes to this request' : 'Send the emergency request to our dispatch team'}>{uploading > 0 ? 'Uploading…' : saving ? 'Sending…' : job ? 'Save changes' : 'Send emergency request'}</Button>
             <Button variant="ghost" block onClick={() => navigate(-1)} title="Go back without sending">Cancel</Button>
           </div>
         </aside>

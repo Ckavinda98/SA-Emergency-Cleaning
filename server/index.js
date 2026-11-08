@@ -1,3 +1,4 @@
+import './config/loadEnv.js'; // first: reads .env on your PC before anything else uses the settings
 import { createApp } from './app.js';
 import { env, assertProductionSecrets } from './config/env.js';
 import { startHousekeeping } from './lib/housekeeping.js';
@@ -10,5 +11,6 @@ createApp().listen(env.PORT, () => {
   console.log(`SACC Emergency Membership Backend API Server Running`);
   console.log(`Port: http://localhost:${env.PORT}`);
   console.log(`Health Check: http://localhost:${env.PORT}/api/health`);
+  console.log(`File storage: ${env.STORAGE_DRIVER} · Allowed websites: ${env.CORS_ORIGIN.join(', ')}`);
   console.log(`=======================================================`);
 });

@@ -45,3 +45,6 @@ lerna-debug.log*
 *.sw?
 .DS_Store
 Thumbs.db
+
+# Local backups (snapshots made before big changes)
+backups/

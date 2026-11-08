@@ -7,6 +7,7 @@ import { useAppData } from '@/app/AppData.jsx';
 import { useJobAction } from '@/app/useJobAction.js';
 import { Card, Button, Field, Alert, InlineConfirm, inputCls, cx } from '@/shared/ui/index.jsx';
 import { REPORT_CHECKLIST, parseList } from '@shared/membership.js';
+import { uploadFile } from '@/shared/api/files.js';
 
 // Phone photos are large: shrink to 1280px JPEG before sending
 export function shrinkImage(file, max = 1280) {
@@ -30,13 +31,23 @@ export function shrinkImage(file, max = 1280) {
   });
 }
 
-function PhotoPicker({ label, photos, onChange, disabled, required }) {
+function PhotoPicker({ label, photos, onChange, disabled, required, jobId }) {
+  const [busy, setBusy] = useState(false);
+  const [failed, setFailed] = useState('');
+  // Each photo is shrunk and uploaded (POST /api/files); the job keeps only the URLs
   const add = async (e) => {
     const files = [...(e.target.files || [])].slice(0, 12 - photos.length);
     e.target.value = '';
     if (!files.length) return;
-    const shots = await Promise.all(files.map(f => shrinkImage(f)));
-    onChange([...photos, ...shots]);
+    setBusy(true);
+    setFailed('');
+    try {
+      const shots = await Promise.all(files.map(f => uploadFile(f, 'photo', jobId)));
+      onChange([...photos, ...shots]);
+    } catch (err) {
+      setFailed(err.message);
+    }
+    setBusy(false);
   };
   return (
     <div>
@@ -52,12 +63,13 @@ function PhotoPicker({ label, photos, onChange, disabled, required }) {
           </div>
         ))}
         {!disabled && photos.length < 12 && (
-          <label title={`Add ${label.toLowerCase()}`} className="flex h-20 w-20 cursor-pointer flex-col items-center justify-center gap-1 rounded-lg border-2 border-dashed border-slate-300 text-xs font-semibold text-slate-500 hover:border-brand hover:text-brand">
-            <Camera className="h-5 w-5" />Add
-            <input type="file" accept="image/*" capture="environment" multiple className="hidden" onChange={add} />
+          <label title={`Add ${label.toLowerCase()}`} className={cx('flex h-20 w-20 flex-col items-center justify-center gap-1 rounded-lg border-2 border-dashed border-slate-300 text-xs font-semibold text-slate-500', busy ? 'opacity-60' : 'cursor-pointer hover:border-brand hover:text-brand')}>
+            <Camera className="h-5 w-5" />{busy ? 'Uploading…' : 'Add'}
+            <input type="file" accept="image/*" capture="environment" multiple className="hidden" onChange={add} disabled={busy} />
           </label>
         )}
       </div>
+      {failed && <p className="mt-1 text-xs font-medium text-red-600">{failed}</p>}
     </div>
   );
 }
@@ -150,7 +162,7 @@ export function OnSiteRecord({ job }) {
       <div className="space-y-5">
         <section>
           <h3 className="mb-2 flex items-center gap-1.5 text-sm font-bold text-slate-900"><Ruler className="h-4 w-4 text-brand" />Before you start</h3>
-          <PhotoPicker label="Before photos" required photos={before} disabled={locked} onChange={(l) => savePhotos('beforePhotos', l)} />
+          <PhotoPicker jobId={job.id} label="Before photos" required photos={before} disabled={locked} onChange={(l) => savePhotos('beforePhotos', l)} />
           <div className="mt-3 grid grid-cols-2 gap-3">
             <Field label="Measured area (m²)" required><input type="number" min="0" step="0.5" inputMode="decimal" className={inputCls} value={form.measuredArea} disabled={locked} onChange={e => set('measuredArea', e.target.value)} /></Field>
             <Field label="Technicians on site" hint="The first technician is included"><input type="number" min="1" max="10" className={inputCls} value={form.technicianCount} disabled={locked} onChange={e => set('technicianCount', e.target.value)} /></Field>
@@ -184,7 +196,7 @@ export function OnSiteRecord({ job }) {
         {working && (
           <section>
             <h3 className="mb-2 flex items-center gap-1.5 text-sm font-bold text-slate-900"><ListChecks className="h-4 w-4 text-brand" />Before you leave</h3>
-            <PhotoPicker label="After photos" required photos={after} disabled={locked} onChange={(l) => savePhotos('afterPhotos', l)} />
+            <PhotoPicker jobId={job.id} label="After photos" required photos={after} disabled={locked} onChange={(l) => savePhotos('afterPhotos', l)} />
             <ul className="mt-3 space-y-1.5">
               {REPORT_CHECKLIST.map(c => (
                 <li key={c.id}>
@@ -247,7 +259,7 @@ export function MissedAccessForm({ job }) {
         ))}
         {job.onsitePhone && <a className="text-sm font-semibold text-brand underline" href={`tel:${job.onsitePhone}`}>Call {job.onsitePhone}</a>}
       </div>
-      <div className="mt-2"><PhotoPicker label="Photo of the entrance" required photos={photo ? [photo] : []} onChange={l => setPhoto(l[l.length - 1] || '')} /></div>
+      <div className="mt-2"><PhotoPicker jobId={job.id} label="Photo of the entrance" required photos={photo ? [photo] : []} onChange={l => setPhoto(l[l.length - 1] || '')} /></div>
       <Field label="Notes" className="mt-2"><input className={inputCls} value={notes} onChange={e => setNotes(e.target.value)} placeholder="e.g. gate locked, no answer at reception" /></Field>
       <div className="mt-2 flex gap-2">
         <InlineConfirm label="Record missed access" icon={AlertTriangle} disabled={left > 0 || calls < needCalls || !photo}

@@ -1,0 +1,3 @@
+# Netlify: the app uses real page paths (/app/requests/123, /admin/jobs/...) through BrowserRouter.
+# Without this rule, refreshing any page other than / shows Netlify's "Page not found".
+/*    /index.html   200

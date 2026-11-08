@@ -128,16 +128,18 @@ export async function activity(query) {
   if (q) {
     // Names, emails and values typed in the change itself; also matches action names ("plan", "deleted")
     const actionHits = Object.entries(ACTIONS).filter(([k, v]) => `${k} ${v.label}`.toLowerCase().includes(q.toLowerCase())).map(([k]) => k);
+    // PostgreSQL "contains" is case-sensitive (SQLite's was not), so ask for insensitive matching
+    const like = { contains: q, mode: 'insensitive' };
     const [orgs, techs, jobs, users] = await Promise.all([
-      prisma.organization.findMany({ where: { businessName: { contains: q } }, select: { id: true } }),
-      prisma.technician.findMany({ where: { name: { contains: q } }, select: { id: true } }),
-      prisma.emergencyRequest.findMany({ where: { jobNumber: { contains: q } }, select: { id: true } }),
-      prisma.user.findMany({ where: { name: { contains: q } }, select: { id: true } })
+      prisma.organization.findMany({ where: { businessName: like }, select: { id: true } }),
+      prisma.technician.findMany({ where: { name: like }, select: { id: true } }),
+      prisma.emergencyRequest.findMany({ where: { jobNumber: like }, select: { id: true } }),
+      prisma.user.findMany({ where: { name: like }, select: { id: true } })
     ]);
     const entityIds = [...orgs, ...techs, ...jobs].map(r => r.id);
     where.OR = [
-      { userEmail: { contains: q } },
-      { diffJson: { contains: q } },
+      { userEmail: like },
+      { diffJson: like },
       ...(actionHits.length ? [{ action: { in: actionHits } }] : []),
       ...(entityIds.length ? [{ entityId: { in: entityIds } }] : []),
       ...(users.length ? [{ userId: { in: users.map(u => u.id) } }] : [])

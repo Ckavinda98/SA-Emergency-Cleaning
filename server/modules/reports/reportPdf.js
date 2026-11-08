@@ -2,6 +2,7 @@
 // with the job's data. The template has no form fields, so values are drawn at the positions of its
 // table cells, measured from the template (A4, 595 x 842 pt, y measured from the top of the page).
 import { readFile } from 'node:fs/promises';
+import { readImage } from '../../lib/storage.js';
 import { fileURLToPath } from 'node:url';
 import { PDFDocument, StandardFonts, rgb } from 'pdf-lib';
 import { money } from '../../../shared/membership.js';
@@ -33,10 +34,6 @@ function wrap(font, text, size, width) {
   return lines;
 }
 
-function dataUrlImage(src) {
-  const m = /^data:image\/(png|jpe?g);base64,(.+)$/i.exec(String(src || ''));
-  return m ? { type: m[1].toLowerCase() === 'png' ? 'png' : 'jpg', bytes: Buffer.from(m[2], 'base64') } : null;
-}
 
 export async function renderServiceReportPdf(r) {
   const { job, org, charges } = r;
@@ -103,7 +100,7 @@ export async function renderServiceReportPdf(r) {
   const photos = async (list, x0, x1) => {
     const imgs = [];
     for (const src of list.slice(0, 4)) {
-      const d = dataUrlImage(src);
+      const d = await readImage(src); // data: URL or a file in storage
       if (!d) continue;
       try { imgs.push(d.type === 'png' ? await pdf.embedPng(d.bytes) : await pdf.embedJpg(d.bytes)); } catch { /* unreadable image */ }
     }
@@ -149,7 +146,7 @@ export async function renderServiceReportPdf(r) {
 
   // 8. Completion sign-off
   text(p3, 58, 128, 'Recorded in the SACC app', { size: 8, color: MUTED });
-  const sig = dataUrlImage(job.siteRepSignature);
+  const sig = await readImage(job.siteRepSignature);
   if (sig) {
     try {
       const img = sig.type === 'png' ? await pdf.embedPng(sig.bytes) : await pdf.embedJpg(sig.bytes);

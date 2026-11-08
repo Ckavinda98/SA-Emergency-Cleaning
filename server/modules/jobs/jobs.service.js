@@ -2,7 +2,9 @@ import { prisma } from '../../db/prisma.js';
 import { badRequest, forbidden, notFound } from '../../lib/httpError.js';
 import { recordAudit, changedFields } from '../../lib/audit.js';
 import { assertOrganizationAccess, isJobAssignedToTechnician, jobScope } from '../../lib/access.js';
-import { parseJob } from '../../lib/jobs.js';
+import { parseJob, withMediaLinks } from '../../lib/jobs.js';
+import { storedList, storedValue } from '../../lib/storage.js';
+import { linkFilesToJob } from '../files/files.service.js';
 import { getConfig } from '../config/config.service.js';
 import { planFor } from '../../../shared/config.js';
 import { FINISHED_STATUSES, canTechnicianMove, DISPATCHED_STATUSES } from '../../../shared/jobStatus.js';
@@ -30,13 +32,13 @@ async function decorate(jobs) {
   const arrivals = await prisma.jobStatusEvent.findMany({ where: { jobId: { in: jobs.map(j => j.id) }, toStatus: 'ARRIVED' }, orderBy: { createdAt: 'asc' } });
   const arrivedAt = new Map();
   for (const ev of arrivals) if (!arrivedAt.has(ev.jobId)) arrivedAt.set(ev.jobId, ev.createdAt);
-  return jobs.map(job => {
+  return Promise.all(jobs.map(job => {
     const org = orgs.get(job.organizationId);
     const planId = job.planAtBooking || org?.membershipPlan;
     const plan = planFor(config, planId);
     const charges = job.chargesJson ? JSON.parse(job.chargesJson) : jobCharges(job, plan, config, org ? ratesFor(org, config, planId) : {});
-    return { ...parseJob(job), planName: plan?.name, charges, membershipNumber: org?.membershipNumber || null, arrivedAt: arrivedAt.get(job.id) || null };
-  });
+    return withMediaLinks({ ...parseJob(job), planName: plan?.name, charges, membershipNumber: org?.membershipNumber || null, arrivedAt: arrivedAt.get(job.id) || null });
+  }));
 }
 const decorateOne = async (job) => (await decorate([job]))[0];
 
@@ -169,10 +171,12 @@ export async function create(actor, body) {
         planAtBooking: plan.id,
         priorityTier: org.subscriptionStatus === 'SUSPENDED' ? 4 : plan.priority,
         travelKm: location.serviceArea === 'OUTSIDE_METRO' ? location.travelKm : null,
-        photosJson: JSON.stringify(body.photos || []),
-        videosJson: JSON.stringify(body.videos || [])
+        photosJson: JSON.stringify(storedList(body.photos || [])),
+        videosJson: JSON.stringify(storedList(body.videos || []))
       }
     });
+    // Photos and videos were uploaded before the job existed: link their FileAttachment rows to it
+    await linkFilesToJob(tx, job.id, [...storedList(body.photos || []), ...storedList(body.videos || [])]);
     await tx.jobStatusEvent.create({
       data: { jobId: job.id, fromStatus: '', toStatus: 'NEW', changedByUserId: actor.userId, notes: `Created via ${source}` }
     });
@@ -318,8 +322,8 @@ export async function edit(actor, id, body) {
     accessInstructions: pick('accessInstructions'),
     accessRestrictions: pick('accessRestrictions'),
     parkingInstructions: pick('parkingInstructions'),
-    photosJson: body.photos ? JSON.stringify(body.photos) : existing.photosJson,
-    videosJson: body.videos ? JSON.stringify(body.videos) : existing.videosJson
+    photosJson: body.photos ? JSON.stringify(storedList(body.photos)) : existing.photosJson,
+    videosJson: body.videos ? JSON.stringify(storedList(body.videos)) : existing.videosJson
   };
   data.coverageWarningsJson = JSON.stringify(coverageWarnings({ ...data, hazards }, await getConfig()));
 
@@ -445,8 +449,8 @@ export async function updateSiteRecord(actor, id, body) {
   if (body.measuredArea !== undefined) data.measuredArea = body.measuredArea === '' || body.measuredArea === null ? null : parseFloat(body.measuredArea);
   if (body.technicianCount !== undefined) data.technicianCount = Math.max(1, Math.min(10, parseInt(body.technicianCount, 10) || 1));
   if (body.equipmentCollectionAt !== undefined) data.equipmentCollectionAt = body.equipmentCollectionAt ? new Date(body.equipmentCollectionAt) : null;
-  if (Array.isArray(body.beforePhotos)) data.beforePhotosJson = JSON.stringify(body.beforePhotos.slice(0, 12));
-  if (Array.isArray(body.afterPhotos)) data.afterPhotosJson = JSON.stringify(body.afterPhotos.slice(0, 12));
+  if (Array.isArray(body.beforePhotos)) data.beforePhotosJson = JSON.stringify(storedList(body.beforePhotos.slice(0, 12)));
+  if (Array.isArray(body.afterPhotos)) data.afterPhotosJson = JSON.stringify(storedList(body.afterPhotos.slice(0, 12)));
   if (Array.isArray(body.disposal)) data.disposalJson = JSON.stringify(body.disposal.filter(d => d && d.item).map(d => ({ item: String(d.item).slice(0, 120), cost: Math.max(0, Number(d.cost) || 0) })));
   if (body.checklist && typeof body.checklist === 'object') data.checklistJson = JSON.stringify(body.checklist);
   if (body.siteRepSignature !== undefined) {
@@ -460,7 +464,11 @@ export async function updateSiteRecord(actor, id, body) {
   } else if (STAFF_ONLY.some(f => body[f] !== undefined)) {
     throw forbidden('Only the admin desk can change travel or other charges.');
   }
-  const updated = await prisma.emergencyRequest.update({ where: { id }, data });
+  const updated = await prisma.$transaction(async (tx) => {
+    const row = await tx.emergencyRequest.update({ where: { id }, data });
+    await linkFilesToJob(tx, id, [...parseList(data.beforePhotosJson), ...parseList(data.afterPhotosJson)]);
+    return row;
+  });
   const diff = changedFields(job, data, [...SITE_TEXT, 'measuredArea', 'technicianCount', 'equipmentCollectionAt', 'travelKm', 'otherCharges', 'otherChargesNote', 'signedOffAt']);
   for (const k of ['beforePhotosJson', 'afterPhotosJson', 'disposalJson', 'checklistJson']) if (data[k] !== undefined && data[k] !== job[k]) diff[k.replace('Json', '')] = 'changed';
   if (Object.keys(diff).length) await recordAudit(actor, { action: 'JOB_SITE_RECORD_UPDATED', entityType: 'EmergencyRequest', entityId: id, diff });
@@ -496,7 +504,7 @@ export async function missedAccess(actor, id, { calls, entrancePhoto, notes }) {
   if ((Number(calls) || 0) < (config.missedAccessCalls ?? 2)) throw badRequest(`Call the site contact at least ${config.missedAccessCalls ?? 2} times first.`);
   if (!entrancePhoto) throw badRequest('Take a photo of the entrance.');
   const updated = await prisma.$transaction(async (tx) => {
-    const data = { ...(await consumeCallout(tx, job, config)), status: 'UNABLE_TO_ACCESS', missedAccessAt: new Date(), missedAccessJson: JSON.stringify({ waitedMinutes: waited, calls: Number(calls), entrancePhoto, notes: notes || null }) };
+    const data = { ...(await consumeCallout(tx, job, config)), status: 'UNABLE_TO_ACCESS', missedAccessAt: new Date(), missedAccessJson: JSON.stringify({ waitedMinutes: waited, calls: Number(calls), entrancePhoto: storedValue(entrancePhoto), notes: notes || null }) };
     const result = await tx.emergencyRequest.update({ where: { id }, data });
     await addEvent(tx, job, 'UNABLE_TO_ACCESS', actor, `No access after ${waited} min and ${calls} calls`);
     await syncTechnicians(tx, job, result, 'UNABLE_TO_ACCESS');

@@ -1,0 +1,40 @@
+# Render "Blueprint": in Render choose New + > Blueprint and pick this repository.
+# Values marked sync: false are asked for once in the Render dashboard and are never stored in git.
+services:
+  - type: web
+    name: sa-emergency-cleaning-api
+    runtime: node
+    plan: free
+    region: singapore
+    branch: main
+    buildCommand: npm ci --include=dev && npx prisma generate
+    startCommand: node server.js
+    healthCheckPath: /api/health
+    autoDeploy: true
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NODE_VERSION
+        value: "22"
+      - key: DATABASE_URL
+        sync: false
+      - key: DIRECT_DATABASE_URL
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: JWT_REFRESH_SECRET
+        generateValue: true
+      - key: CORS_ORIGIN
+        sync: false
+      - key: STORAGE_DRIVER
+        value: supabase
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
+      - key: SUPABASE_BUCKET
+        value: sacc-files
+      - key: SUPABASE_PUBLIC_BUCKET
+        value: "true"
+      - key: JSON_LIMIT
+        value: 2mb

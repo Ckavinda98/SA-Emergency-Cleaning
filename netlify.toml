@@ -1,0 +1,21 @@
+# Netlify settings for the web app (read automatically when Netlify builds this repository)
+[build]
+  command = "npm run build"
+  publish = "dist"
+
+[build.environment]
+  NODE_VERSION = "22"
+  # Do NOT set NODE_ENV = "production" here: Netlify would then skip devDependencies
+  # (tailwindcss, @tailwindcss/vite) and the build would fail.
+
+# Same job as public/_redirects: every page path loads the app
+[[redirects]]
+  from = "/*"
+  to = "/index.html"
+  status = 200
+
+# Built files have a hash in their name, so browsers can keep them for a year
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"

@@ -2,7 +2,7 @@ import jwt from 'jsonwebtoken';
 import { prisma } from '../../db/prisma.js';
 import { env } from '../../config/env.js';
 import { HttpError, forbidden, notFound } from '../../lib/httpError.js';
-import { parseJob } from '../../lib/jobs.js';
+import { parseJob, withMediaLinks } from '../../lib/jobs.js';
 import { getConfig } from '../config/config.service.js';
 import { planFor } from '../../../shared/config.js';
 import { jobCharges, HAZARDS, WATER_TYPES } from '../../../shared/membership.js';
@@ -47,7 +47,7 @@ async function loadReport(token, jobId) {
   if (viewer.role === 'TECHNICIAN' && !(await isJobAssignedToTechnician(viewer, row))) throw forbidden();
 
   const config = await getConfig();
-  const job = parseJob(row);
+  const job = await withMediaLinks(parseJob(row));
   const plan = planFor(config, job.planAtBooking || row.organization?.membershipPlan);
   const rates = ratesFor(row.organization, config, plan.id);
   const charges = job.chargesJson ? JSON.parse(job.chargesJson) : jobCharges(job, plan, config, rates);

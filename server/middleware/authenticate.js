@@ -24,6 +24,7 @@ export const authenticateToken = (req, res, next) => {
 // The PDF report checks its own token (passed as ?token=) because it opens in a new browser tab.
 export const PUBLIC_ROUTES = [
   ['GET', /^\/api\/health$/],
+  ['GET', /^\/api\/health\/storage$/],
   ['GET', /^\/api\/config$/],
   ['POST', /^\/api\/auth\/(register|login|refresh)$/],
   ['GET', /^\/api\/jobs\/[^/]+\/pdf-report$/],
